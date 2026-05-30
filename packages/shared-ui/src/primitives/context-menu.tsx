@@ -1,7 +1,7 @@
 import { CheckIcon, ChevronRightIcon } from 'lucide-react';
 import { ContextMenu as ContextMenuPrimitive } from 'radix-ui';
 import type * as React from 'react';
-import { cn } from '@/lib/cn';
+import { cn } from '../lib/cn';
 
 function ContextMenu({ ...props }: React.ComponentProps<typeof ContextMenuPrimitive.Root>) {
   return <ContextMenuPrimitive.Root data-slot="context-menu" {...props} />;

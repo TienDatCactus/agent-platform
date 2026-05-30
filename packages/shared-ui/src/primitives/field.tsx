@@ -3,9 +3,9 @@
 import { cva, type VariantProps } from 'class-variance-authority';
 import { useMemo } from 'react';
 
-import { cn } from '@/lib/cn';
-import { Label } from '@/primitives/label';
-import { Separator } from '@/primitives/separator';
+import { cn } from '../lib/cn';
+import { Label } from '../primitives/label';
+import { Separator } from '../primitives/separator';
 
 function FieldSet({ className, ...props }: React.ComponentProps<'fieldset'>) {
   return (
@@ -43,7 +43,7 @@ function FieldGroup({ className, ...props }: React.ComponentProps<'div'>) {
     <div
       data-slot="field-group"
       className={cn(
-        'group/field-group @container/field-group flex w-full flex-col gap-4 data-[slot=checkbox-group]:gap-3 *:data-[slot=field-group]:gap-4',
+        'group/field-group ..container/field-group flex w-full flex-col gap-4 data-[slot=checkbox-group]:gap-3 *:data-[slot=field-group]:gap-4',
         className,
       )}
       {...props}
@@ -58,7 +58,7 @@ const fieldVariants = cva('group/field flex w-full gap-2 data-[invalid=true]:tex
       horizontal:
         'flex-row items-center has-[>[data-slot=field-content]]:items-start *:data-[slot=field-label]:flex-auto has-[>[data-slot=field-content]]:[&>[role=checkbox],[role=radio]]:mt-px',
       responsive:
-        'flex-col *:w-full @md/field-group:flex-row @md/field-group:items-center @md/field-group:*:w-auto @md/field-group:has-[>[data-slot=field-content]]:items-start @md/field-group:*:data-[slot=field-label]:flex-auto [&>.sr-only]:w-auto @md/field-group:has-[>[data-slot=field-content]]:[&>[role=checkbox],[role=radio]]:mt-px',
+        'flex-col *:w-full ..md/field-group:flex-row ..md/field-group:items-center ..md/field-group:*:w-auto ..md/field-group:has-[>[data-slot=field-content]]:items-start ..md/field-group:*:data-[slot=field-label]:flex-auto [&>.sr-only]:w-auto ..md/field-group:has-[>[data-slot=field-content]]:[&>[role=checkbox],[role=radio]]:mt-px',
     },
   },
   defaultVariants: {

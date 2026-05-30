@@ -119,7 +119,7 @@ export function AppShell({
         <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
           <SheetContent
             side="left"
-            hideClose
+            showCloseButton={false}
             className="w-[260px] border-r border-hairline bg-surface-1 p-0 sm:max-w-none md:hidden"
           >
             <LeftNav
