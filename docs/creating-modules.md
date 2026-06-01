@@ -8,6 +8,38 @@ If anything below conflicts with [`architecture.md`](./architecture.md) §6 (bou
 
 ---
 
+## TL;DR — the happy path
+
+Six commands, three files you actually write. This builds a `timesheet` module with one table, one domain function, and one agent tool:
+
+```bash
+pnpm gen module                                 # answer: timesheet · feature · Y (web companion)
+#  → edit packages/timesheet/src/backend/db/schema.ts        (your tables)
+pnpm --filter @seta/timesheet db:generate       # generate the migration
+pnpm db:migrate                                 # apply it
+#  → edit src/backend/domain/<verb-entity>.ts                (the only way into the module)
+#  → edit src/backend/agent-tools/<verb-entity>.ts           (expose it to the agent)
+#  → edit src/register.ts                                    (wire schema/events/rbac/tools)
+pnpm --filter @seta/timesheet typecheck && pnpm lint
+```
+
+The generator scaffolds everything else. Jump to the step you need:
+
+| I want to… | Section |
+|---|---|
+| Scaffold the package | [§1](#1-scaffold-the-module-fast-path) |
+| Define tables + migrate | [§2](#2-define-tables-fast-path) |
+| Declare events & permissions | [§3](#3-declare-events-and-permissions-full-path-events-optional-for-fast-path) |
+| Write the domain function | [§4](#4-implement-the-public-surface-fast-path) |
+| Expose it as an agent tool | [§5](#5-expose-the-function-as-an-agent-tool-fast-path) |
+| Register everything | [§6](#6-register-the-module-fast-path) |
+| Add a web UI | [§7](#7-web-companion--ui-walkthrough-standard-path) |
+| Add an agent specialist | [§8](#8-agent-ux-considerations-standard-path) |
+| Write tests | [§9](#9-tests-full-path) |
+| Pre-PR checklist | [§10](#10-pre-pr-checklist-all-paths) |
+
+---
+
 ## 0. Pick your path
 
 | Path | Time | Includes | Skip |

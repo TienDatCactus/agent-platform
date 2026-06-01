@@ -62,45 +62,63 @@ The platform architecture remains flexible. While Mastra is configured by defaul
 
 ```
 ├── apps/
-│   ├── web/          the React SPA (entire frontend: module views, app shell, navigation)
-│   ├── server/       the API server and AI agent host (auth, RBAC, Mastra runtime)
-│   ├── worker/       the async job processor (embeddings, workflows, background sync)
-│   └── cli/          developer tooling for scaffolding and infrastructure
+│   ├── web/          React 19 SPA — module views, app shell, navigation
+│   ├── server/       Hono API + Mastra agent host
+│   ├── worker/       graphile-worker async jobs
+│   └── cli/          scaffolding & infra tooling
 │
 ├── packages/
-│   ├── core/         the event bus and RBAC foundation that everything depends on
-│   ├── identity/     the auth, multi-tenancy, and user profile system
-│   ├── planner/      REFERENCE MODULE: the canonical example of a business module
-│   ├── agent/        the assembled Mastra agent (supervisor + all registered specialists)
-│   ├── knowledge/    knowledge base and document management
-│   ├── staffing/     resource allocation and team management
-│   ├── notifications/ multi-channel notification system
-│   ├── integrations/ external system integrations (M365, etc.)
-│   ├── shared-*/     shared infrastructure packages (db, rbac, ui, crypto, storage, etc.)
+│   ├── core/         event bus + RBAC foundation (everything depends on it)
+│   ├── identity/     auth, multi-tenancy, user profiles
+│   ├── planner/      REFERENCE MODULE — canonical business module
+│   ├── agent/        the assembled Mastra agent (supervisor + specialists)
+│   ├── knowledge/    knowledge base & document management
+│   ├── staffing/     resource allocation & team management
+│   ├── notifications/ multi-channel notifications
+│   ├── integrations/ external systems (M365, etc.)
+│   ├── shared-*/     shared infra (db, rbac, ui, crypto, storage, …)
 │   └── your-module/  BUILD YOUR CUSTOM MODULE HERE
 │
 ├── sdks/
-│   ├── agent/        the SDK for authoring agent tools with HITL support
-│   └── module/       the SDK for plugging your module UI into the app shell
+│   ├── agent/        SDK for authoring agent tools (HITL support)
+│   └── module/       SDK for plugging module UI into the app shell
 │
-└── docs/
-    ├── architecture.md        system architecture and design principles
-    ├── agent-architecture.md  in-depth agent system design
-    ├── creating-modules.md    guide for building new modules
-    ├── dev-quickstart.md      local development setup
-    └── hosting/               deployment guides (AWS, Docker, etc.)
+└── docs/             guides indexed below
 ```
 
-**Related Documentation:**
-- **[`docs/architecture.md`](docs/architecture.md)**: Complete system architecture and design principles (SSOT)
-- **[`docs/agent-architecture.md`](docs/agent-architecture.md)**: Deep dive into the three-tier supervisor agent system
-- **[`docs/creating-modules.md`](docs/creating-modules.md)**: Module authoring guide with `pnpm gen module`
-- **[`docs/dev-quickstart.md`](docs/dev-quickstart.md)**: Local development setup and first-run instructions
-- **[`AGENTS.md`](AGENTS.md)**: Contract for AI coding agents working in this repo
+**Documentation:**
+- **[`docs/architecture.md`](docs/architecture.md)** — system architecture & design principles (single source of truth)
+- **[`docs/agent-architecture.md`](docs/agent-architecture.md)** — three-tier supervisor agent system
+- **[`docs/dev-quickstart.md`](docs/dev-quickstart.md)** — local setup & first run
+- **[`docs/creating-modules.md`](docs/creating-modules.md)** — building a module with `pnpm gen module`
+- **[`docs/hosting/`](docs/hosting/)** — self-hosting (Docker Compose, AWS, scaling, upgrades)
+- **[`AGENTS.md`](AGENTS.md)** — contract for AI coding agents working in this repo
 
 ---
 
-## 2. Agent Runtime Architecture
+## 2. Getting Started
+
+**Prerequisites:** Node 24 LTS, pnpm 11+, and Docker running.
+
+```bash
+git clone https://github.com/Seta-International/agent-platform.git && cd agent-platform
+pnpm install
+cp .env.example .env     # then fill BETTER_AUTH_SECRET, CRYPTO_LOCAL_MASTER_KEY, OPENAI_API_KEY
+pnpm db:up               # Postgres + Redis + telemetry, all in Docker
+pnpm db:migrate          # apply every module's schema
+pnpm db:seed             # load the demo tenant (~300 users, plans, tasks)
+pnpm dev                 # serves the app at http://localhost:5173
+```
+
+Sign in at <http://localhost:5173/login> as `admin@hackathon.com` / `ChangeMe@2026`.
+
+New here? The full walkthrough — secret generation, env reference, data-loading
+options, and troubleshooting — is in **[`docs/dev-quickstart.md`](docs/dev-quickstart.md)**.
+To build a business module, see **[`docs/creating-modules.md`](docs/creating-modules.md)**.
+
+---
+
+## 3. Agent Runtime Architecture
 
 ### Conceptual Runtime Flow
 
@@ -210,7 +228,11 @@ sequenceDiagram
 
 ---
 
-## 3. Infrastructure
+## 4. Hackathon & Cloud Deployment
+
+> This section is specific to deploying on the Seta hackathon AWS environment.
+> For local development use [§2 Getting Started](#2-getting-started); for general
+> self-hosting (Docker Compose, AWS, scaling, upgrades) see [`docs/hosting/`](docs/hosting/).
 
 > Each hackathon team is allocated a secure, isolated cloud sandbox environment in AWS.
 
@@ -238,7 +260,7 @@ graph TD
     Docker -->|Secure Asset Sync| S3
 ```
 
-## 4. Development Pipeline
+### Deployment Pipeline
 
 1. **Fork & Configure:** Fork the repository to your team workspace and configure production secrets (database URLs, LLM API keys, and session tokens).
 2. **Build & Push to ECR:** Build the root multi-stage Dockerfile (frontend static assets build and backend compilation bundle) and push the image to your dedicated AWS ECR repository.
