@@ -1,6 +1,6 @@
 # Community platforms
 
-Seta is not officially supported on Coolify, Dokploy, Kamal, or other compose-wrapping deployment platforms. The published Docker images (`ghcr.io/Seta-International/platform-server`, `ghcr.io/Seta-International/platform-web`) are standard OCI artifacts and *will* run on any of these — but we do not test against them, will not accept bug reports specific to them, and will not adapt our compose file to platform-specific conventions. This page exists so you can make an informed choice.
+Seta is not officially supported on Coolify, Dokploy, Kamal, or other compose-wrapping deployment platforms. The published Docker images (the `platform-server` and `platform-web` images on Amazon ECR — see the [image and version policy](README.md#image-and-version-policy)) are standard OCI artifacts and *will* run on any of these — but we do not test against them, will not accept bug reports specific to them, and will not adapt our compose file to platform-specific conventions. This page exists so you can make an informed choice.
 
 ## What "not supported" means here
 

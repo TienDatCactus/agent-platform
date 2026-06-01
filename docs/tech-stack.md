@@ -15,7 +15,7 @@ This document records each choice, the alternatives evaluated, and the condition
 | HTTP | Hono | Fast, web-standard, no decorators | [§3](#3-hono) |
 | Background jobs | graphile-worker | Same Postgres, no extra infra | [§4](#4-graphile-worker) |
 | Auth | better-auth | First-class Drizzle + multi-tenant + OIDC | [§5](#5-better-auth--argon2id) |
-| Database | Postgres 16 | Schemas as the boundary tool we need | [§6](#6-postgres-16) |
+| Database | Postgres 17 | Schemas as the boundary tool we need | [§6](#6-postgres-17) |
 | Vector | pgvector + HNSW | One DB, partitioned per tenant | [§7](#7-pgvector) |
 | ORM | Drizzle | `pgSchema` + `schemaFilter` + raw escape hatch | [§8](#8-drizzle-orm) |
 | Event bus | Transactional outbox + `LISTEN/NOTIFY` | Lost/phantom events impossible | [§9](#9-transactional-outbox--listennotify) |
@@ -101,7 +101,7 @@ This document records each choice, the alternatives evaluated, and the condition
 
 ---
 
-## 6. Postgres 16
+## 6. Postgres 17
 
 **Role:** Single database for every module (one DB, many schemas).
 
@@ -201,7 +201,7 @@ This document records each choice, the alternatives evaluated, and the condition
 | | |
 |---|---|
 | **Why this** | Quality leader on our retrieval evals; ~30 ms p95 at top-50; multilingual. We wrap it in `@seta/shared-retrieval` with a provider abstraction, so swapping is one config change. |
-| **Alternatives** | **Voyage rerank** (close runner-up, kept as fallback). **LLM-as-judge** (used as fallback when rerank API is down — slower, more expensive). **No rerank** (`none` mode for ops). |
+| **Alternatives** | **LLM-as-judge** (fallback when Cohere API is down — slower, more expensive). **No rerank** (`none`/noop mode for ops). |
 | **Trade-offs accepted** | • External API call on the hot path • Per-1k-doc pricing — bounded by our `top-50` cap |
 | **Reconsider when** | A self-hostable cross-encoder reaches Cohere parity on our eval set within our latency budget. |
 

@@ -6,23 +6,23 @@ Each entry shows: required/optional, type, default, and a short paragraph of mea
 
 ## Image versions
 
-Compose-level variables. They are interpolated into `compose.yml` to choose the image to pull. The running `platform-server` and `platform-web` do not read them.
+Compose-level variables. They are interpolated into `compose.yml` to choose the image to pull. The running `platform-server` and `platform-web` do not read them. Images are published to **Amazon ECR**; see the [image and version policy](README.md#image-and-version-policy) for the canonical tag/registry scheme.
 
 ### PLATFORM_VERSION
 
 Required. String. Default: `latest`.
 
-Image tag pulled for both `platform-server` and `platform-web`. Pin to a specific semver (`v1.2.3`) in production; `latest` is only acceptable for first-try installs. Tag scheme follows `vX.Y.Z` (immutable), `vX.Y`, `vX`, `latest`.
+Version tag pulled for both `platform-server` and `platform-web` (used as `server-${PLATFORM_VERSION}` / `web-${PLATFORM_VERSION}`). Pin to a specific semver (`v1.2.3`) in production; `latest` is only acceptable for first-try installs.
 
 ### PLATFORM_IMAGE_SERVER
 
-Optional. String. Default: `ghcr.io/Seta-International/platform-server:${PLATFORM_VERSION}`.
+Optional. String. Default: `${ECR_REGISTRY}/${ECR_REPOSITORY}:server-${PLATFORM_VERSION}`.
 
 Full image reference for the API + workers container. Override when testing a fork or a local build (`docker build -t platform-server:local -f infra/docker/server.Dockerfile . && PLATFORM_IMAGE_SERVER=platform-server:local docker compose up`).
 
 ### PLATFORM_IMAGE_WEB
 
-Optional. String. Default: `ghcr.io/Seta-International/platform-web:${PLATFORM_VERSION}`.
+Optional. String. Default: `${ECR_REGISTRY}/${ECR_REPOSITORY}:web-${PLATFORM_VERSION}`.
 
 Full image reference for the static web bundle. Override to point at a fork.
 
@@ -36,9 +36,9 @@ Public hostname users hit. Used for Traefik routing rules and the ACME certifica
 
 ### PUBLIC_URL
 
-Required. URL. Default: `https://${PLATFORM_DOMAIN}`.
+Required. URL. Default (local dev): `http://localhost:5173`. Self-host: `https://${PLATFORM_DOMAIN}`.
 
-Read by the server (better-auth `baseURL` and `trustedOrigins`). Must match the externally-visible scheme and host; a mismatch breaks cookie and CORS flows.
+Read by the server (better-auth `baseURL` and `trustedOrigins`). Must match the externally-visible scheme and host; a mismatch breaks cookie and CORS flows. Local dev serves the web app from Vite on `http://localhost:5173`; when deploying via Docker Compose, override to `https://${PLATFORM_DOMAIN}`.
 
 ### PLATFORM_ACME_EMAIL
 
@@ -75,17 +75,17 @@ Database name created at first boot.
 
 ### DATABASE_URL
 
-Required. URL. Default: `postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}`.
+Required. URL. Default (local dev): `postgres://seta:seta@localhost:5442/seta`. Self-host: `postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}`.
 
-Connection string read by the server and CLI. The hostname `postgres` is the compose service name; do not change unless you also rename the service. Set this explicitly only when pointing at a managed service (RDS) — see [`aws.md`](aws.md).
+Connection string read by the server and CLI. Local dev connects to the Docker Postgres mapped to host port `5442` (`pnpm db:up`). For the Docker Compose self-host stack, override to use the in-network `postgres` service hostname — do not change `postgres` unless you also rename the service. Set this explicitly to a managed-service endpoint when pointing at RDS — see [`aws.md`](aws.md).
 
 ## Server runtime
 
 ### NODE_ENV
 
-Required. Enum: `development` | `production` | `test`. Default: `production`.
+Required. Enum: `development` | `production` | `test`. Default (local dev): `development`. Self-host: `production`.
 
-Standard Node.js environment switch. Affects assert-style invariants, log verbosity, and error response shapes.
+Standard Node.js environment switch. Affects assert-style invariants, log verbosity, and error response shapes. Set to `production` when deploying via Docker Compose.
 
 ### PORT
 
@@ -184,6 +184,166 @@ Initial password for the Grafana `admin` account. Change this before exposing Gr
 Optional. URL. No default.
 
 Root URL Grafana uses for absolute links and redirects when served behind a reverse proxy (e.g. `https://metrics.example.com`). Matches the `metrics.<domain>` Traefik router.
+
+### DLQ_ALERT_THRESHOLD
+
+Optional. Int. Default: `100`.
+
+`/health/ready` returns 503 when any subscription has more than this many dead-letter rows in the last 24h. Lower it to fail readiness sooner on a poison-pill subscriber.
+
+## Mail (outbound transactional only)
+
+### MAILER_DEFAULT_TRANSPORT
+
+Optional. Enum (`dev-stub` | `smtp` | `graph`). Default: `dev-stub`.
+
+Default outbound mail transport. `dev-stub` captures emails in memory (dev/test only); production must set `smtp` (or per-tenant Microsoft Graph).
+
+### MAILER_DEFAULT_SENDER
+
+Optional. String. Default: `noreply@seta.example`.
+
+Default From address for outbound transactional mail.
+
+### MAILER_DEFAULT_SENDER_DISPLAY_NAME
+
+Optional. String. No default.
+
+Optional display name paired with `MAILER_DEFAULT_SENDER` on the From header.
+
+### MAILER_DEFAULT_SMTP_URL
+
+Conditional. String. No default.
+
+Required when `MAILER_DEFAULT_TRANSPORT=smtp`. SMTP connection URL, e.g. `smtp://user:pass@email-smtp.us-east-1.amazonaws.com:587`.
+
+### MAILER_GRAPH_CLIENT_ID
+
+Conditional. String. No default.
+
+Required only for tenants using Microsoft Graph `/sendMail`. Reuse the operator Entra app (with `Mail.Send` Application permission + tenant admin consent).
+
+### MAILER_GRAPH_CLIENT_SECRET
+
+Conditional. Secret. No default.
+
+Client secret for the Entra app referenced by `MAILER_GRAPH_CLIENT_ID`. Treat as a high-value secret.
+
+## Agent
+
+### AGENT_MODELS
+
+Optional. Comma-separated list. Default: `openai/gpt-5.5:balanced`.
+
+Chat models as `provider/model[:tier]`, where tier ∈ `fast` | `balanced` | `reasoning` (default `balanced`). The first entry is used when `AGENT_MODEL_DEFAULT=auto` can't infer a model. Unset disables agent chat.
+
+### OPENAI_API_KEY
+
+Conditional. Secret. No default.
+
+OpenAI API key. Required when any `openai/*` model is used in `AGENT_MODELS` or `EMBED_MODEL` (Mastra reads it automatically). Other providers use their own conventional `<PROVIDER>_API_KEY` variables.
+
+## Retrieval — rerank + HNSW
+
+### EMBED_MODEL
+
+Optional. String. Default: `openai/text-embedding-3-small`.
+
+Online + batch embedding model as `provider/model`. Must be a 1536-dim model (pgvector columns are pinned to 1536). Batch backfill requires an `openai/*` model.
+
+### RERANKER_PROVIDER
+
+Optional. Enum (`auto` | `cohere` | `none`). Default: `auto`.
+
+Reranker selection. `auto` uses Cohere when `COHERE_API_KEY` is set, otherwise falls back to LLM-as-judge; `none` skips reranking entirely.
+
+### COHERE_API_KEY
+
+Conditional. Secret. No default.
+
+Cohere API key. Enables the Cohere reranker when `RERANKER_PROVIDER=auto` (or `cohere`).
+
+### RERANK_STAGE1_TOPK
+
+Optional. Int. Default: `50`.
+
+Stage-1 oversample size: how many candidates the first retrieval pass returns before reranking.
+
+### RERANK_STAGE2_TOPN
+
+Optional. Int. Default: `10`.
+
+Stage-2 cap: how many reranked results are kept and passed to the agent.
+
+### RERANK_CACHE_TTL_SECONDS
+
+Optional. Int. Default: `300`.
+
+Time-to-live (seconds) for cached rerank results.
+
+### HNSW_EF_SEARCH
+
+Optional. Int. Default: `100`.
+
+pgvector HNSW search-list size. Higher = better recall, slower query.
+
+## S3-lite storage (tenant knowledge files)
+
+### S3_REGION
+
+Optional. String. Default: `ap-southeast-1`.
+
+AWS region of the knowledge bucket.
+
+### S3_BUCKET
+
+Optional. String. Default: `seta-knowledge`.
+
+Bucket for tenant knowledge file uploads. Keys are prefixed `tenants/<id>/`.
+
+### S3_ENDPOINT
+
+Optional. URL. No default.
+
+Custom S3 endpoint for MinIO / LocalStack (e.g. `http://localhost:9000`). Leave unset for AWS S3.
+
+### S3_ACCESS_KEY_ID
+
+Conditional. Secret. No default.
+
+Access key ID. Required when `S3_ENDPOINT` is set or when running outside an IAM instance role.
+
+### S3_SECRET_ACCESS_KEY
+
+Conditional. Secret. No default.
+
+Secret access key paired with `S3_ACCESS_KEY_ID`.
+
+### S3_FORCE_PATH_STYLE
+
+Optional. Boolean. Default: `false`.
+
+`true` for MinIO (path-style addressing); `false` for AWS S3 (virtual-hosted style).
+
+## Knowledge upload AV scanning (ClamAV)
+
+### CLAMAV_HOST
+
+Optional. String. Default: `clamav`.
+
+ClamAV daemon hostname. Defaults to the compose service name `clamav`; use `localhost` for split deploys.
+
+### CLAMAV_PORT
+
+Optional. Int. Default: `3310`.
+
+ClamAV daemon TCP port.
+
+### KNOWLEDGE_AV_REQUIRED
+
+Optional. Boolean. Default: `false`.
+
+When `true`, uploaded files cannot move past `uploading` until ClamAV marks them clean. Set to `false` only for environments that intentionally skip AV.
 
 ## Sync-check contract
 

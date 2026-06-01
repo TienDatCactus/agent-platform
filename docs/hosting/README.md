@@ -2,6 +2,8 @@
 
 Seta ships as two Docker images — `platform-server` (API + workers) and `platform-web` (static bundle) — both built from this repo. The same images run the OSS single-VPS deployment and Seta's AWS production. Pick a path below.
 
+<a id="image-and-version-policy"></a>
+
 ## Pick a path
 
 - I want to run Seta on one VPS in 5 minutes. → [`docker-compose.md`](docker-compose.md)
@@ -18,11 +20,13 @@ Seta ships as two Docker images — `platform-server` (API + workers) and `platf
 
 ## Image and version policy
 
-Images are published to GHCR: `ghcr.io/Seta-International/platform-server` and `ghcr.io/Seta-International/platform-web`.
+This is the single source of truth for image references and tags; other pages link here rather than restate it.
+
+Images are published to **Amazon ECR**. `compose.yml` resolves each image as `${ECR_REGISTRY}/${ECR_REPOSITORY}:server-${PLATFORM_VERSION}` and `…:web-${PLATFORM_VERSION}` (overridable via `PLATFORM_IMAGE_SERVER` / `PLATFORM_IMAGE_WEB`). Set `ECR_REGISTRY`, `ECR_REPOSITORY`, and `PLATFORM_VERSION` in `.env`.
 
 Multi-arch: `linux/amd64` + `linux/arm64`.
 
-Tag scheme: `vX.Y.Z` (immutable), `vX.Y`, `vX`, `latest`. Self-hosters should pin to `vX.Y.Z` and upgrade deliberately.
+Tag scheme: the server and web images share one repository, distinguished by a `server-` / `web-` prefix on the version tag. `PLATFORM_VERSION` is `vX.Y.Z` (immutable), `vX.Y`, `vX`, or `latest`. Self-hosters should pin to `vX.Y.Z` and upgrade deliberately.
 
 ## Layout of this directory
 

@@ -45,7 +45,7 @@ graph TD
 - **SPA** (`apps/web/`): Built on React 19, Vite, and TanStack Router. It manages the core UI layout shell, handles dynamic injection of custom module components, and registers client-side navigation.
 - **Server** (`apps/server/`): A high-performance Hono HTTP server acting as the gateway. It handles request authentication, enforces RBAC middleware checks, orchestrates REST APIs, and runs the Mastra agent core.
 - **Worker** (`apps/worker/`): A resource-isolated process powered by graphile-worker. It processes async database tasks, generates text vector embeddings, handles calendar sync, and runs asynchronous workflow steps.
-- **Database** (Postgres 16): Stores standard relational application data with schemas for Core, Identity, Planner, and your custom modules. It also includes a dedicated pgvector HNSW index for fast semantic similarity search.
+- **Database** (Postgres 17): Stores standard relational application data with schemas for Core, Identity, Planner, and your custom modules. It also includes a dedicated pgvector HNSW index for fast semantic similarity search.
 
 ### Core Agent Engine (Mastra Integration)
 
@@ -151,80 +151,9 @@ flowchart TD
     Exec --> EndStream
 ```
 
-### Detailed Implementation Flow (Case Study: Planner)
+### Detailed request flow
 
-This shows the step-by-step execution of a real system request. The diagram illustrates how the Server, Specialist Agent, Database, and Worker interact when resolving a multi-faceted business inquiry. For example: "Check if there's a task similar to 'Stripe webhook integration', and if not, assign someone with the right skills to take it."
-
-### 2a. Request Ingestion & Delegation Routing
-
-```mermaid
-sequenceDiagram
-    participant UI as Chat Companion (apps/web)
-    participant API as Server Router (Hono HTTP)
-    participant Mid as RBAC Middleware (shared-rbac)
-    participant Top as Supervisor Agent (Mastra Core)
-    participant Mem as Memory Manager (Mastra Memory)
-    participant Spec as Planner Specialist (packages/planner)
-
-    UI->>API: POST /api/agent/v1/chat with Message Payload & Thread ID
-    API->>Mid: Verify JWT and validate "agent.chat.use" permission
-    Mid-->>API: Inject Tenant isolation ID & User Profile
-    API->>Mem: Query short-term message windows + HNSW memory arrays from Postgres
-    Mem-->>API: Provide enriched Context Bundle
-    API->>Top: streamText(messages, context)
-    Note over Top: Classifies request -> Maps intent to the "Task Assignment" sub-domain
-    Top->>Spec: Delegate processing thread to the Planner Specialist
-    Note over Spec: Load and reference all 9 registered domain-specific business tools
-```
-
-### 2b. Structural Signaling & Context Gathering
-
-```mermaid
-sequenceDiagram
-    participant Spec as Planner Specialist Agent
-    participant SimTool as Duplicate Finder (Read Tool)
-    participant SkillTool as Resource Search (Read Tool)
-    participant DB as Postgres (pgvector)
-
-    Note over Spec: Gather details needed to check duplicates and match candidate skills
-    Spec->>SimTool: Call tool with task name parameters
-    SimTool->>DB: Cosine Similarity query on Task Vector indices (filtered by tenant)
-    DB-->>SimTool: Return potential duplicates matching score (e.g., Match found: 0.92)
-    SimTool-->>Spec: Payload confirming a highly similar task exists
-
-    Spec->>SkillTool: Call tool with parsed skills list: ["Stripe", "Webhooks"]
-    SkillTool->>DB: Query engineering skills catalog & check current work capacity
-    DB-->>SkillTool: Return matched profile metrics & existing task workloads
-    SkillTool-->>Spec: Return top candidate profiles
-```
-
-### 2c. HITL Interception & State Commitment
-
-```mermaid
-sequenceDiagram
-    participant Spec as Planner Specialist Agent
-    participant Propose as Assignment Proposer (Write Tool)
-    participant Stream as AI SDK v6 Engine
-    participant UI as Chat Component UI
-    participant Confirm as Approval Controller (/approve)
-    participant Core as Core Domain (packages/planner)
-    participant DB as Postgres
-    participant Outbox as core.events
-
-    Spec->>Propose: Call tool with proposed candidates & similarity context
-    Note over Propose: Trigger agent execution pause: ctx.agent.suspend()
-    Propose-->>Stream: Interrupt text token generation -> Package client UI metadata
-    Stream-->>UI: Render interactive Approval Card on client screen
-
-    Note over UI: User reviews candidate matches, selects assignee, and clicks "Confirm"
-    UI->>Confirm: POST authorization choice with payload
-    Confirm->>Core: Invoke assignTask() inside a Database Transaction
-    Core->>DB: Execute UPDATE statement on target Task record
-    Core->>Outbox: INSERT 'planner.task.assigned' event to the transactional outbox
-    Note over Core: Transaction commits atomically (system state and domain events are unified)
-    Confirm-->>Stream: Resume agent execution thread
-    Stream-->>UI: Stream remaining confirmation text to the chat window
-```
+For the full step-by-step sequence — request ingestion, RBAC, specialist delegation, read-tool context gathering, HITL approval, and the transactional outbox commit — see **[`docs/agent-architecture.md`](docs/agent-architecture.md)**.
 
 ---
 
@@ -251,7 +180,7 @@ graph TD
     end
 
     subgraph Private["VPC"]
-        RDS["AWS RDS Postgres 16"]
+        RDS["AWS RDS Postgres 17"]
         S3["AWS S3 Bucket"]
     end
 
