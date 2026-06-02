@@ -132,7 +132,7 @@ journey
       Ask which tasks are blocked: 5: User
       Agent returns blocked items with blocker text: 5: Agent
       Ask who can take TASK-101 requiring Stripe webhooks: 5: User
-      Agent runs planner_suggestAssignee and shows top-5 candidates: 5: Agent
+      Agent runs planner_proposeAssignment and shows top-5 candidates: 5: Agent
       User picks an assignee and approves: 5: User
       Agent assigns, notifies assignee, records audit: 5: Agent
     section Close
@@ -185,7 +185,7 @@ sequenceDiagram
     participant Top as Top supervisor
     participant Dom as Work supervisor
     participant Spec as Planner specialist
-    participant Reads as Read tools (search_users_by_skills,<br/>planner_findSimilarTasks, identity_getTimezone, …)
+    participant Reads as Read tools (search_users_by_skills,<br/>planner_findSimilarTasks, identity_getTimezoneForUser, …)
     participant Propose as planner_proposeAssignment (HITL)
 
     User->>Top: Who can take TASK-101
@@ -194,11 +194,11 @@ sequenceDiagram
     Spec->>Spec: reason about which signals matter
     Spec->>Reads: 2-4 read tool calls (skill / similar work / load / tz)
     Reads-->>Spec: signal data
-    Spec->>Propose: planner_proposeAssignment(taskId, candidates[], summary)
-    Note over Propose: ctx.agent.suspend(ApprovalCard)
+    Spec->>Propose: planner_proposeAssignment(taskRef, candidates[], summary)
+    Note over Propose: ChatHitlRecorder writes workflow_approvals row<br/>(workflow_id = __chat_hitl:planner_proposeAssignment)
     Propose-->>User: candidate list + per-candidate rationale
-    User->>Propose: Pick Devon (resumeData)
-    Propose->>Propose: INV-1 guard then assignTask
+    User->>Propose: Pick Devon (decide → approve)
+    Propose->>Propose: chatHitlDecider runs INV-1 guard then assignTask
     Propose-->>User: confirmation
 ```
 
@@ -223,42 +223,51 @@ The planner specialist composes tools owned by `planner` and `identity`. Tool ID
 
 | Tool ID | Owning module | Side effect | Permission | Author shape |
 |---|---|---|---|---|
+| `identity_whoAmI` | `identity` | read | `identity.user.read` | agent tool |
 | `planner_getTask` | `planner` | read | `planner.task.read` | agent tool |
-| `planner_createTask` | `planner` | write (dedup-aware) | `planner.task.create` | agent tool (HITL via suspend) |
-| `planner_suggestAssignee` | `planner` | proposes write | `planner.task.assign` | agent tool (HITL via suspend) |
+| `planner_createTask` | `planner` | write (dedup-aware) | `planner.task.create` | agent tool (executes; dedup workflow carries HITL) |
+| `planner_proposeAssignment` | `planner` | proposes write | `planner.task.assign` | agent tool (chat HITL via `ChatHitlRecorder`) |
 | `planner_assignTask` | `planner` | write | `planner.task.assign` | agent tool (`needsApproval`) |
-| `search_tasks_semantic` | `planner` | read | `planner.task.read` | agent tool |
+| `planner_setAssignees` | `planner` | write | `planner.task.assign` | agent tool (`needsApproval`) |
+| `planner_findSimilarTasks` | `planner` | read | `planner.task.read` | agent tool |
 | `search_users_by_skills` | `identity` | read | `identity.user.read` | agent tool |
-| `planner_getOpenTaskCount` | `planner` | read | `planner.task.read` | cross-module read tool |
-| `identity_getTimezone` | `identity` | read | `identity.user.read` | cross-module read tool |
-| `identity_getAvailability` | `identity` | read | `identity.user.read` | cross-module read tool |
+| `planner_getOpenTaskCountForUser` | `planner` | read | `planner.task.read` | cross-module read tool |
+| `identity_getTimezoneForUser` | `identity` | read | `identity.user.read` | cross-module read tool |
+| `identity_getAvailabilityForUser` | `identity` | read | `identity.user.read` | cross-module read tool |
 
 Each agent tool calls `registerToolPermission(tool, slug)` (done inside `defineAgentTool` when `rbac` is set). At the HTTP boundary the `agent.chat.use` permission gates access to the chat route; per-tool RBAC slugs are enforced inside each tool's `execute` against the resolved session, and per-workflow permissions are enforced inside domain functions for the workflow management endpoints. There is no separate runtime filter that hides tools from the model — the model sees the full specialist tool record, and unauthorised executions are rejected at the domain boundary.
 
 ## 9. Human-in-the-loop boundary
 
-HITL has two shapes today, both audited:
+HITL has three shapes today, all audited. Two govern the chat path; the third governs programmatic workflow runs.
 
-**Agent-tool approvals (`@mastra/core` tool suspension).** A write tool either sets `needsApproval: true` (simple accept/reject card derived from the input schema) or calls `ctx.agent.suspend(payload)` inside `execute` to surface a domain-specific card validated against `suspendSchema`. The client posts the user's decision to `POST /api/agent/v1/chat/approve`; the route calls Mastra's `approveToolCall` / `declineToolCall` / `resumeStream(resumeData)` on the top supervisor and streams the continuation back. `resumeData` is validated against the tool's `resumeSchema`.
+**Chat shape 1 — `needsApproval` tools (Mastra native approval).** A write tool sets `needsApproval: true` (e.g. `planner_assignTask`, `planner_setAssignees`). Mastra interrupts the tool call before `execute` runs and surfaces an accept/reject card derived from the input schema. The client posts the decision to `POST /api/agent/v1/chat/approve`; the route calls `approveToolCall` / `declineToolCall` on the top supervisor (or `resumeStream(resumeData)` when a custom resume payload is supplied) and streams the continuation back.
+
+**Chat shape 2 — `ChatHitlRecorder` tools.** A write tool that must show a richer, multi-candidate card (e.g. `planner_proposeAssignment`) deliberately does *not* call `ctx.agent.suspend()` — a suspended tool call never reaches the `'workflows'` pubsub channel, so no `agent.workflow_approvals` row would be written and the card would never appear. Instead the tool builds an `ApprovalCard` and calls the `ChatHitlRecorder` injected into `requestContext` (key `RC_CHAT_HITL_RECORDER`) by the chat route. The recorder writes `workflow_runs` + `workflow_approvals` in one transaction under a synthetic `workflow_id = '__chat_hitl:planner_proposeAssignment'`, and the tool returns `{ kind: 'pending-approval' }` so the turn completes. The user decides via the same decide-approval path as workflows; because the `workflow_id` carries the `__chat_hitl:` prefix, `decide-approval` dispatches to the registered `ChatHitlDecider` (`chatHitlDeciders`) for that tool, which executes the assignment directly (no Mastra resume).
 
 ```mermaid
 stateDiagram-v2
     [*] --> Proposed: agent calls write tool
-    Proposed --> AwaitingApproval: needsApproval = true OR ctx.agent.suspend(card)
-    AwaitingApproval --> Executed: user approves (or sends resumeData)
-    AwaitingApproval --> Rejected: user rejects
-    Executed --> [*]: result streamed back to agent
-    Rejected --> [*]: rejection streamed back to agent
+    Proposed --> AwaitingApproval_native: needsApproval = true (Mastra interrupt)
+    Proposed --> AwaitingApproval_recorded: ChatHitlRecorder writes workflow_approvals row
+    AwaitingApproval_native --> Executed: chat/approve → approveToolCall / resumeStream
+    AwaitingApproval_native --> Rejected: chat/approve → declineToolCall
+    AwaitingApproval_recorded --> Executed: decide(approve) → ChatHitlDecider runs the action
+    AwaitingApproval_recorded --> Rejected: decide(reject)
+    Executed --> [*]: result streamed / recorded
+    Rejected --> [*]: rejection streamed / recorded
 ```
+
+**Chat shape 0 — direct execution.** `planner_createTask` sets neither `needsApproval` nor a recorder: it executes `createTask` immediately, then fire-and-forgets the `dedupOnCreate` workflow, which carries its own `hitlSteps` approval if a duplicate is found.
 
 **Workflow-step approvals.** A workflow declares `hitlSteps: string[]` on its `WorkflowSpec`. The lifecycle hook writes a row into `agent.workflow_approvals` when one of those steps suspends; users decide via `POST /api/agent/v1/workflows/approvals/:approvalId/decide` (decision `approve | reject | modify`, with optional `overrideUserId` and `note`).
 
 | Property | Behaviour |
 |---|---|
 | Read tools | Execute directly without approval |
-| Write tools | Always require approval — either `needsApproval` or a typed `suspend()` card |
-| Approval surface | Card schema is either the tool input schema (`needsApproval`) or the `suspendSchema` payload |
-| Rejection | Streamed back as a tool error (agent path) or persisted to `agent.workflow_approvals` (workflow path); the agent may re-plan |
+| Write tools | Either gate via `needsApproval` (Mastra interrupt) or via a `ChatHitlRecorder` card; `planner_createTask` executes directly and defers HITL to its dedup workflow |
+| Approval surface | Card schema is either the tool input schema (`needsApproval`) or the `ApprovalCard` payload written by the recorder |
+| Rejection | `needsApproval` → streamed back as a tool decline; recorder/workflow → persisted to `agent.workflow_approvals`; the agent may re-plan |
 | Replay & rerun | Workflows support `rerun` (new run, same input or override) and `replayFromStep` (continue from a specific step) |
 | Audit | Tool calls and workflow lifecycle events both land in `core.events`; workflow runs are also materialised in `agent.workflow_runs` with idempotency in `agent.workflow_run_events_seen` |
 
@@ -374,15 +383,17 @@ Tool definitions reside in `packages/planner/src/backend/agent-tools/`. Each too
 
 | Tool ID | File | Wraps | RBAC | HITL shape |
 |---|---|---|---|---|
+| `identity_whoAmI` | `@seta/identity/agent-tools` | returns the current session user's `user_id` | `identity.user.read` | none |
 | `planner_getTask` | `get-task.ts` | `getTask` | `planner.task.read` | none |
 | `planner_findSimilarTasks` | `find-similar-tasks.ts` | `findSimilarTasks` (vector + assignee enrich + scope filter) | `planner.task.read` | none |
 | `search_users_by_skills` | `search-users-by-skills.ts` | `searchUsersBySkills` (identity) | `identity.user.read` | none |
 | `planner_getOpenTaskCountForUser` | `get-open-task-count.ts` | spec promoted via `defineCrossModuleReadAsTool` | `planner.task.read.tenant` | none |
 | `identity_getTimezoneForUser` | `@seta/identity/agent-tools` | spec promoted via `defineCrossModuleReadAsTool` | `identity.user.read` | none |
 | `identity_getAvailabilityForUser` | `@seta/identity/agent-tools` | spec promoted via `defineCrossModuleReadAsTool` | `identity.user.read` | none |
-| `planner_createTask` | `create-task.ts` | thin confirm-and-create over `createTask` domain | `planner.task.create` | `ctx.agent.suspend(confirm card)` |
+| `planner_createTask` | `create-task.ts` | `createTask` domain, then fire-and-forgets the `dedupOnCreate` workflow | `planner.task.create` | none on the tool itself; dedup workflow carries `hitlSteps` |
 | `planner_assignTask` | `assign-task.ts` | `assignTask` | `planner.task.assign` | `needsApproval: true` |
-| `planner_proposeAssignment` | `propose-assignment.ts` | agent-reasoned candidate list + INV-1 guard + `assignTask` | `planner.task.assign` | `ctx.agent.suspend(candidate list card)` → `assignTask` on resume |
+| `planner_setAssignees` | `set-assignees.ts` | `setAssignees` (replace full assignee list) | `planner.task.assign` | `needsApproval: true` |
+| `planner_proposeAssignment` | `propose-assignment.ts` | agent-reasoned candidate list → `ChatHitlRecorder`; INV-1 guard + `assignTask` run in the `ChatHitlDecider` on approval | `planner.task.assign` | `ChatHitlRecorder` card (synthetic `__chat_hitl:planner_proposeAssignment` approval) |
 
 `defineAgentTool` is the authoring helper — it wraps `@mastra/core/tools.createTool`, registers the RBAC slug, attaches `needsApproval` when set, and surfaces a friendly `displayName` for the UI:
 
@@ -407,7 +418,7 @@ export const plannerAssignTaskTool = defineAgentTool({
 });
 ```
 
-The `planner_suggestAssignee` tool uses the richer `suspendSchema` / `resumeSchema` shape: it computes the Top-5 candidates, calls `ctx.agent.suspend(card)` with an `ApprovalCard` payload, and on resume reads `ctx.agent.resumeData` to either apply the chosen assignment, defer, or surface an alternative ("Related to #N", "Sub-task of #N") from the dedup workflow.
+The `planner_proposeAssignment` tool uses the richer multi-candidate shape, but deliberately *not* via `ctx.agent.suspend()` (a suspended agent-tool call never reaches the `'workflows'` pubsub channel, so no approval row would be written — see the comment in `propose-assignment.ts`). Instead it builds a 1–5 candidate `ApprovalCard` and calls the `ChatHitlRecorder` from `requestContext`, which writes a `workflow_approvals` row under the synthetic `workflow_id = '__chat_hitl:planner_proposeAssignment'`. The tool returns `{ kind: 'pending-approval' }`; when the user decides, the decide-approval path dispatches to the registered `ChatHitlDecider`, which runs the INV-1 guard and `assignTask` directly. The deterministic ranking on the REST/inbox path lives in the `assignBySkill` *workflow* (steps `assignBySkill.compute` / `assignBySkill.suggest`), which is a distinct surface — not a specialist tool.
 
 ## 13. Supervisor tree wiring
 
@@ -482,11 +493,11 @@ A module that wants to expose a read for any specialist to call — without forc
 ```ts
 // packages/planner/src/backend/agent-tools/get-open-task-count.ts (shape)
 export const plannerGetOpenTaskCountSpec: CrossModuleReadToolSpec = {
-  id: 'planner_getOpenTaskCount',
+  id: 'planner_getOpenTaskCountForUser',
   description: 'Count of open planner tasks assigned to a given user.',
   inputSchema: z.object({ userId: z.string().uuid() }),
-  outputSchema: z.object({ count: z.number().int().nonneg() }),
-  rbac: 'planner.task.read',
+  outputSchema: z.object({ count: z.number().int().nonnegative() }),
+  rbac: 'planner.task.read.tenant',
   availableTo: 'all-specialists',
   execute: async ({ session, input }) => { /* … */ },
 };
@@ -496,7 +507,7 @@ These tools differ from specialist tools in three ways: (1) they are owned by th
 
 ## 16. Web surface and HTTP routes
 
-The chat panel is anchored to the right edge of the application shell. The approval card is rendered inline within the conversation: for `needsApproval`-style cards it is derived from the input schema; for `suspend()`-style cards the payload is rendered through the `ApprovalCard` UI contract (`sdks/agent/src/hitl/card.ts`), which supports candidate rows, detail blocks, and a chosen-action payload that is fed back as `resumeData`.
+The chat panel is anchored to the right edge of the application shell. The approval card is rendered inline within the conversation: for `needsApproval` tools it is derived from the input schema and decided via `chat/approve` (`approveToolCall` / `declineToolCall`); for `ChatHitlRecorder` tools the recorder-written `ApprovalCard` payload is rendered through the `ApprovalCard` UI contract (`sdks/agent/src/hitl/card.ts`), which supports candidate rows, detail blocks, and a chosen-action payload submitted to the decide-approval endpoint.
 
 ```
 ┌────────────────────────────────────────────────────────────┐
@@ -551,27 +562,25 @@ The chat route also performs two boundary transformations: (1) page-context inje
 
 ## 17. End-to-end execution
 
-The full path from user approval to assignee notification:
+The full path from user approval to assignee notification, shown for a `needsApproval` write tool (`planner_assignTask`) resumed through `chat/approve`:
 
 ```mermaid
 sequenceDiagram
     participant UI as assistant-ui
     participant API as POST /api/agent/v1/chat/approve
     participant Top as Top supervisor
-    participant Dom as Work supervisor
     participant Pln as Planner specialist
-    participant Tool as planner_suggestAssignee
+    participant Tool as planner_assignTask (needsApproval)
     participant Dom2 as planner.assignTask (domain)
     participant DB as Postgres
     participant Disp as Dispatcher
     participant Sub as notifications subscriber
     participant Devon as Assignee SSE
 
-    UI->>API: approve { runId, toolCallId, resumeData: chosenUserId }
-    API->>Top: resumeStream(resumeData, opts)
-    Top->>Dom: delegate
-    Dom->>Pln: delegate
-    Pln->>Tool: resume — ctx.agent.resumeData = { userId }
+    UI->>API: approve { runId, toolCallId }
+    API->>Top: approveToolCall(opts) (or resumeStream(resumeData) for a custom payload)
+    Top->>Pln: resume the interrupted tool call
+    Pln->>Tool: execute now runs
     Tool->>Dom2: assignTask(taskId, userId)
     Dom2->>DB: BEGIN UPDATE planner.tasks INSERT core.events COMMIT
     DB-->>Disp: pg_notify events
@@ -582,6 +591,8 @@ sequenceDiagram
     Tool-->>Pln: stream tool result
     Pln-->>UI: TASK-101 assigned to Devon
 ```
+
+For the `planner_proposeAssignment` candidate card the path differs: the user's decision posts to the workflow decide-approval endpoint, and the registered `ChatHitlDecider` runs the INV-1 guard and `assignTask` directly (no Mastra resume) before the same `planner.task.assigned` event → notification fan-out.
 
 The p95 latency budget for this flow is approximately 1.2 s from approval click to the confirmation message, with an additional ~150 ms for the SSE notification to reach the assignee.
 
@@ -613,7 +624,7 @@ Per-turn p95 budget for a single planner turn that exercises both supervisors an
 | Top route | 120 ms | ~120 in, ~20 out | Balanced tier, four-domain choice |
 | Domain route | 150 ms | ~200 in, ~30 out | Balanced tier, picks specialist vs workflow |
 | Specialist plan | 450 ms | ~700 in, ~180 out | Fast tier; tool record in prompt |
-| `search_tasks_semantic` | 250 ms | — | Stage 1 RRF + Stage 2 Cohere rerank |
+| `planner_findSimilarTasks` | 250 ms | — | Stage 1 RRF + Stage 2 Cohere rerank |
 | `search_users_by_skills` (or cross-module reads in workflow path) | 80 ms | — | Indexed query |
 | `planner_assignTask` (post-approval) | 50 ms | — | Single transaction |
 | Summary stream back to UI | 200 ms | ~300 in, ~120 out | Fast tier |
@@ -650,7 +661,7 @@ flowchart TD
 |---|
 | All capabilities have a public function in the owning module |
 | Each capability has a tool wrapper in that module's `agent-tools/` (specialist tools) or a `CrossModuleReadToolSpec` (cross-module reads) |
-| Write tools set `needsApproval: true` *or* call `ctx.agent.suspend(...)` with a typed `suspendSchema` |
+| Write tools set `needsApproval: true` *or* surface an `ApprovalCard` via the `ChatHitlRecorder` (with a registered `ChatHitlDecider`) — never `ctx.agent.suspend()` in the chat path |
 | Workflows declare every approving step in `hitlSteps[]` |
 | RBAC slugs are registered in `<module>/src/rbac.ts` and threaded through `defineAgentTool({ rbac })` |
 | Specialist tool record contains no more than ~15 entries; otherwise split or move reads to cross-module |

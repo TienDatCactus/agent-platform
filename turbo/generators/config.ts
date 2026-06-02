@@ -22,7 +22,11 @@ export default function generator(plop: PlopTypes.NodePlopAPI): void {
   plop.setActionType('addWorkspaceDeps', (answers) => {
     const { name } = answers as WorkspaceDepsAnswers;
     const dep = `@seta/${name}`;
-    const targets = ['apps/server/package.json', 'apps/worker/package.json'];
+    const targets = [
+      'apps/server/package.json',
+      'apps/worker/package.json',
+      'apps/cli/package.json',
+    ];
     const messages = targets.map((t) => addWorkspaceDep(t, dep));
     return messages.join('\n');
   });
@@ -30,6 +34,25 @@ export default function generator(plop: PlopTypes.NodePlopAPI): void {
   plop.setActionType('runPnpmInstall', () => {
     execSync('pnpm install', { stdio: 'inherit' });
     return 'pnpm install complete';
+  });
+
+  // The entry-point `modify` actions append each new import directly above the
+  // marker comment, which leaves the import block out of alphabetical order and
+  // trips Biome's organizeImports assist. Re-sort just those files so a fresh
+  // scaffold passes `pnpm lint` with no manual cleanup.
+  plop.setActionType('organizeEntryImports', (answers) => {
+    const { withWeb } = answers as WorkspaceDepsAnswers;
+    const files = [
+      'apps/server/src/index.ts',
+      'apps/worker/src/index.ts',
+      'apps/cli/src/commands/migrate.ts',
+      ...(withWeb ? ['apps/web/src/shell/manifests.ts'] : []),
+    ];
+    execSync(
+      `pnpm exec biome check --write --linter-enabled=false --formatter-enabled=false ${files.join(' ')}`,
+      { stdio: 'inherit' },
+    );
+    return `organized imports in ${files.length} entry-point file(s)`;
   });
 
   plop.setGenerator('module-scaffold', {
@@ -158,8 +181,8 @@ export default function generator(plop: PlopTypes.NodePlopAPI): void {
         // Public-surface smoke test
         {
           type: 'add',
-          path: `${base}/tests/public/loads.test.ts`,
-          templateFile: 'templates/module/tests/public/loads.test.ts.hbs',
+          path: `${base}/tests/contract/loads.test.ts`,
+          templateFile: 'templates/module/tests/contract/loads.test.ts.hbs',
         },
 
         // Entry-point edits: apps/server
@@ -189,6 +212,20 @@ export default function generator(plop: PlopTypes.NodePlopAPI): void {
           pattern: /(\/\/ MODULE_REGISTRATIONS_END)/,
           template: `register${pascal}Contributions(reg);\n$1`,
         },
+
+        // Entry-point edits: apps/cli migrate command (registrations are indented inside a function)
+        {
+          type: 'modify',
+          path: 'apps/cli/src/commands/migrate.ts',
+          pattern: /(\/\/ MODULE_IMPORTS_END)/,
+          template: `import { register${pascal}Contributions } from '@seta/${name}/register';\n$1`,
+        },
+        {
+          type: 'modify',
+          path: 'apps/cli/src/commands/migrate.ts',
+          pattern: /( {2}\/\/ MODULE_REGISTRATIONS_END)/,
+          template: `  register${pascal}Contributions(reg);\n$1`,
+        },
       ];
 
       if (withWeb) {
@@ -207,8 +244,19 @@ export default function generator(plop: PlopTypes.NodePlopAPI): void {
           { type: 'add', path: `${webBase}/api/.gitkeep`, template: '' },
           { type: 'add', path: `${webBase}/components/.gitkeep`, template: '' },
           { type: 'add', path: `${webBase}/hooks/.gitkeep`, template: '' },
-          { type: 'add', path: `${webBase}/pages/.gitkeep`, template: '' },
           { type: 'add', path: `${webBase}/state/.gitkeep`, template: '' },
+          // Minimal visible page + TanStack route so a fresh module renders an
+          // empty page at /<name> immediately after scaffolding.
+          {
+            type: 'add',
+            path: `${webBase}/pages/${name}-page.tsx`,
+            templateFile: 'templates/module-web/page.tsx.hbs',
+          },
+          {
+            type: 'add',
+            path: `apps/web/src/routes/_authed/${name}.tsx`,
+            templateFile: 'templates/module-web/route.tsx.hbs',
+          },
           {
             type: 'modify',
             path: 'apps/web/src/shell/manifests.ts',
@@ -224,7 +272,11 @@ export default function generator(plop: PlopTypes.NodePlopAPI): void {
         );
       }
 
-      actions.push({ type: 'addWorkspaceDeps' }, { type: 'runPnpmInstall' });
+      actions.push(
+        { type: 'organizeEntryImports' },
+        { type: 'addWorkspaceDeps' },
+        { type: 'runPnpmInstall' },
+      );
 
       return actions;
     },

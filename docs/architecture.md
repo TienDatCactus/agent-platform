@@ -112,7 +112,7 @@ The shape below is calibrated for this envelope. Outside it, the trade-offs in �
 | HTTP | Hono | [§3](./tech-stack.md#3-hono) |
 | Jobs | graphile-worker | [§4](./tech-stack.md#4-graphile-worker) |
 | Auth | better-auth + argon2id | [§5](./tech-stack.md#5-better-auth--argon2id) |
-| Database | Postgres 16 + pgvector | [§6](./tech-stack.md#6-postgres-16), [§7](./tech-stack.md#7-pgvector) |
+| Database | Postgres 17 + pgvector | [§6](./tech-stack.md#6-postgres-17), [§7](./tech-stack.md#7-pgvector) |
 | ORM | Drizzle | [§8](./tech-stack.md#8-drizzle-orm) |
 | Event bus | Transactional outbox + `LISTEN/NOTIFY` | [§9](./tech-stack.md#9-transactional-outbox--listennotify) |
 | Agent runtime | Mastra | [§10](./tech-stack.md#10-mastra) |
@@ -383,7 +383,7 @@ There is no separate publish path. `core.emit()` throws outside an `emitContext`
 
 `@seta/identity` wraps better-auth (local password + Entra OIDC) over `identity.user`, `identity.session`, `identity.account`, `identity.verification` (better-auth's tables) plus a sibling `identity.user_profile` for app-specific fields (skills, availability, working_hours, timezone).
 
-Sessions land in request context via a Hono middleware provided by `@seta/core`. Every public-surface function takes a `session: SessionScope` carrying `tenant_id`, `user_id`, the effective-permission set, a role summary, and `requirePermission(slug)` which throws `PermissionDenied` when the caller lacks the permission.
+Sessions land in request context via a Hono middleware provided by `@seta/core`. Every public-surface function takes a `session: SessionScope` carrying `tenant_id`, `user_id`, `role_summary` (`{ roles, cross_tenant_read }`), `accessible_group_ids`, and `cross_tenant_read`. There is no flattened permission set and no method on the scope itself. RBAC is enforced by each module's standalone `requirePermission(session, slug, groupId?)` function, which throws that module's own error class (e.g. `PlannerError('FORBIDDEN', ...)`) when the caller lacks the permission.
 
 ### Login → permission check
 
@@ -403,7 +403,7 @@ sequenceDiagram
     Hono->>Auth: getSession from cookie
     Auth->>DB: load session and permissions
     Hono->>Mod: assignTask with session
-    Mod->>Mod: session.requirePermission planner.task.assign
+    Mod->>Mod: requirePermission session planner.task.assign
 ```
 
 **SSO is admin pre-provisioning only.** No just-in-time provisioning. First SSO login links to an existing pre-provisioned user; unknown subjects are rejected.
@@ -425,7 +425,7 @@ flowchart LR
     A[Domain action] -->|emit event| B[core.events]
     B -->|subscriber in owning module| C[enqueue embed job]
     C -->|graphile-worker| D[Read source via public fn]
-    D -->|embed| E[Cohere or OpenAI or Voyage]
+    D -->|embed| E[OpenAI text-embedding-3-small 1536-dim]
     E -->|write| F[(module entity_embeddings)]
 
     Q[Query] -->|stage 1| RRF[FTS plus vector RRF — k 60, top 50]
@@ -439,7 +439,7 @@ flowchart LR
 | Stage 1 | FTS + vector RRF (`k = 60`), top-50 |
 | Stage 2 | Cross-encoder rerank — Cohere by default, LLM-as-judge fallback, `none` to opt out |
 | Provider abstraction | `@seta/shared-embeddings` (`embedMany`, source-hash, model providers) + `@seta/shared-retrieval` (`Retriever`, RRF SQL builder, rerank) |
-| Mastra surface used | `@mastra/rag` for `MDocument.chunk()` and `rerank()` only. `@mastra/pg`'s `PgVector` is **not** used — incompatible with module-owned schemas. |
+| Mastra surface used | `@mastra/rag` for `MDocument.chunk()` and `rerank()` only. `@mastra/pg`'s `PgVector` is the per-module vector store — each module instantiates it pointed at its own schema (e.g. `identity_rag`, `knowledge_rag`). |
 
 Backfill of an entity's embeddings is a `apps/cli` one-off command, scoped to a tenant.
 
@@ -472,7 +472,7 @@ export const plannerNavManifest: NavManifest = {
 };
 ```
 
-**Console aggregation.** Tenant-admin UI (users, SSO, audit, integrations, notification prefs, tenant settings) lives in `apps/web/src/modules/console/` — one admin home, not one admin sub-app per module.
+**Console aggregation.** Tenant-admin UI (users, SSO, audit, integrations, notification prefs, tenant settings) lives in `apps/web/src/modules/admin/` — one admin home, not one admin sub-app per module.
 
 **Style monopoly.** All styling lives in `@seta/shared-ui`; modules compose primitives from there and never introduce their own CSS, Tailwind configuration, or design tokens. This is enforced statically at lint time.
 

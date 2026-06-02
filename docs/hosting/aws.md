@@ -48,7 +48,7 @@ Self-hosters running on a single VM should refer to [`docker-compose.md`](./dock
 |---|---|---|
 | AWS account | Separate account under the same Organisation | Separate account under the same Organisation |
 | Promotion trigger | Merge to `main` | Git tag matching `v*` |
-| Image source | ECR (mirrored from GHCR on each `main` commit) | ECR (mirrored from GHCR on each tag) |
+| Image source | ECR (built & pushed by GitHub Actions on each `main` commit) | ECR (built & pushed by GitHub Actions on each tag) |
 | Database | RDS Postgres `db.t4g.medium` Multi-AZ | RDS Postgres `db.r6g.large` Multi-AZ or larger (see §4) |
 | Tenants | Internal test tenants only | Customer tenants |
 | Domains | `*.staging.<domain>` | `*.<domain>` |
@@ -60,11 +60,10 @@ Self-hosters running on a single VM should refer to [`docker-compose.md`](./dock
 ```mermaid
 flowchart LR
     PR[PR opened] -->|CI green| MM[Merge to main]
-    MM -->|GitHub Actions| GHCR[Push image to GHCR]
-    GHCR -->|OIDC| ECRs[Mirror to staging ECR]
+    MM -->|GitHub Actions build-push| ECRs[Push image to staging ECR]
     ECRs -->|Force new deployment| ECSs[Staging ECS update]
     ECSs -->|Soak 24h, manual approval| Tag[Cut tag v1.x.y]
-    Tag -->|GitHub Actions| ECRp[Mirror to production ECR]
+    Tag -->|GitHub Actions build-push| ECRp[Push image to production ECR]
     ECRp -->|Blue/green| ECSp[Production ECS update]
 ```
 
@@ -166,12 +165,12 @@ Starter tier uses the NAT gateway in each AZ; Growth and Scale rely on VPC endpo
 
 ## 6. Compute
 
-Both runtimes share one container image, distinguished by environment variables.
+Both runtimes share one container image, distinguished by the entrypoint subcommand. The image runs TypeScript source directly via `tsx` (no `dist/` artifact); `/entrypoint.sh` dispatches on its first positional arg (`serve` | `worker` | `migrate` | `seed` | `health`).
 
 | Service | Image | Command | `PLATFORM_MODULES` | Notes |
 |---|---|---|---|---|
-| `platform-server` | `platform-server:<tag>` | `node /app/apps/server/dist/index.js` | `*` (or comma list for split topology) | HTTP only; enqueue-only worker handle |
-| `seta-worker` | `platform-server:<tag>` (same image) | `node /app/apps/worker/dist/index.js` | `*` | Dispatcher + worker pool |
+| `platform-server` | `platform-server:<tag>` | `/entrypoint.sh serve` | `*` (or comma list for split topology) | HTTP only; enqueue-only worker handle |
+| `seta-worker` | `platform-server:<tag>` (same image) | `/entrypoint.sh worker` | `*` | Dispatcher + worker pool |
 
 ### Task definition essentials
 
@@ -195,7 +194,7 @@ Both runtimes share one container image, distinguished by environment variables.
 
 | Parameter | Value | Reason |
 |---|---|---|
-| Engine | Postgres 16.x | pgvector + `LISTEN/NOTIFY` + partitioning |
+| Engine | Postgres 17 | pgvector + `LISTEN/NOTIFY` + partitioning |
 | Multi-AZ | Yes | RPO ≈ 0, RTO ≤ 60 s on AZ failure |
 | Storage | gp3, encrypted with environment-specific KMS CMK | Encryption at rest; IOPS independent of size |
 | Performance Insights | Enabled, 7-day retention | Query-level diagnostics |
@@ -207,7 +206,7 @@ Both runtimes share one container image, distinguished by environment variables.
 
 | Parameter | Value | Reason |
 |---|---|---|
-| `shared_preload_libraries` | `pg_stat_statements,pgvector` | pgvector required |
+| `shared_preload_libraries` | `pg_stat_statements` | Query stats. pgvector is a plain extension (`CREATE EXTENSION`), not preloadable, so it is not listed here. |
 | `max_connections` | 200 (Starter), 400 (Growth), 800 (Scale) | Sized to task count × pool size + headroom |
 | `autovacuum_max_workers` | 4 | Throughput on event-heavy tables |
 | `autovacuum_naptime` | `15s` | Reduce vacuum backlog |
@@ -575,8 +574,10 @@ LLM provider costs are not included; they vary with workload and are managed at 
 
 | Metric | Production |
 |---|---|
-| RTO (recovery time objective) | 4 hours |
-| RPO (recovery point objective) | 1 hour |
+| RTO (recovery time objective) | 1 hour |
+| RPO (recovery point objective) | 5 minutes |
+
+See [`disaster-recovery.md`](./disaster-recovery.md) for the authoritative DR objectives and restore runbook.
 
 ### Mechanisms
 

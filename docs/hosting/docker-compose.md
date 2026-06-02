@@ -7,7 +7,7 @@ This is the supported self-host install path. End-to-end clock time on a fresh U
 - Linux host with ≥4 GB RAM and ≥20 GB free disk.
 - Docker Engine 27+ with `docker compose` v2.
 - A DNS A-record pointing at the host (Traefik provisions Let's Encrypt automatically).
-- Outbound HTTPS to GHCR (`ghcr.io`) and Let's Encrypt (`acme-v02.api.letsencrypt.org`).
+- Outbound HTTPS to your image registry (Amazon ECR — see the [image and version policy](README.md#image-and-version-policy)) and Let's Encrypt (`acme-v02.api.letsencrypt.org`).
 
 ## Five-minute install
 
@@ -37,8 +37,9 @@ This is the supported self-host install path. End-to-end clock time on a fresh U
 
 5. (Optional, for demo data) Seed:
    ```bash
-   docker compose run --rm server seed
+   docker compose run --rm seeder
    ```
+   `seeder` is a dedicated one-shot service behind the `seed` profile; `docker compose run` auto-enables the profile of the named service, so `up -d` (no args) skips it.
 
 6. Open `https://${PLATFORM_DOMAIN}` and log in with the bootstrap credentials printed to the `server` logs:
    ```bash
@@ -49,7 +50,7 @@ This is the supported self-host install path. End-to-end clock time on a fresh U
 
 | Service | Image | Role |
 |---|---|---|
-| `proxy` | `traefik:v3` | Reverse proxy, Let's Encrypt or self-signed TLS, port 443. |
+| `proxy` | `traefik:v3.1` | Reverse proxy, Let's Encrypt or self-signed TLS, port 443. |
 | `web` | `${PLATFORM_IMAGE_WEB}` | Static React bundle, served by `proxy`. |
 | `server` | `${PLATFORM_IMAGE_SERVER}` | API + workers, default `PLATFORM_MODULES=*`. |
 | `migrator` | `${PLATFORM_IMAGE_SERVER}` | One-shot `platform-server migrate`. `depends_on: postgres healthy`. |
@@ -58,7 +59,7 @@ This is the supported self-host install path. End-to-end clock time on a fresh U
 ## Verifying the install
 
 - `docker compose ps` — all services `running`/`healthy`; `migrator` `exited (0)`.
-- `curl -sfk https://${PLATFORM_DOMAIN}/healthz` — returns `{"status":"ok"}`. (`-k` for `self-signed`.)
+- `curl -sfk https://${PLATFORM_DOMAIN}/health/live` — the API liveness probe, returns `{ "ok": true }`. (`-k` for `self-signed`.) (`/healthz` is the `web` container's nginx static endpoint returning `ok`, not the API.)
 - Log in with the bootstrap user from step 6 above.
 
 ## Common first-install issues

@@ -45,7 +45,7 @@ graph TD
 - **SPA** (`apps/web/`): Built on React 19, Vite, and TanStack Router. It manages the core UI layout shell, handles dynamic injection of custom module components, and registers client-side navigation.
 - **Server** (`apps/server/`): A high-performance Hono HTTP server acting as the gateway. It handles request authentication, enforces RBAC middleware checks, orchestrates REST APIs, and runs the Mastra agent core.
 - **Worker** (`apps/worker/`): A resource-isolated process powered by graphile-worker. It processes async database tasks, generates text vector embeddings, handles calendar sync, and runs asynchronous workflow steps.
-- **Database** (Postgres 16): Stores standard relational application data with schemas for Core, Identity, Planner, and your custom modules. It also includes a dedicated pgvector HNSW index for fast semantic similarity search.
+- **Database** (Postgres 17): Stores standard relational application data with schemas for Core, Identity, Planner, and your custom modules. It also includes a dedicated pgvector HNSW index for fast semantic similarity search.
 
 ### Core Agent Engine (Mastra Integration)
 
@@ -62,45 +62,63 @@ The platform architecture remains flexible. While Mastra is configured by defaul
 
 ```
 ├── apps/
-│   ├── web/          the React SPA (entire frontend: module views, app shell, navigation)
-│   ├── server/       the API server and AI agent host (auth, RBAC, Mastra runtime)
-│   ├── worker/       the async job processor (embeddings, workflows, background sync)
-│   └── cli/          developer tooling for scaffolding and infrastructure
+│   ├── web/          React 19 SPA — module views, app shell, navigation
+│   ├── server/       Hono API + Mastra agent host
+│   ├── worker/       graphile-worker async jobs
+│   └── cli/          scaffolding & infra tooling
 │
 ├── packages/
-│   ├── core/         the event bus and RBAC foundation that everything depends on
-│   ├── identity/     the auth, multi-tenancy, and user profile system
-│   ├── planner/      REFERENCE MODULE: the canonical example of a business module
-│   ├── agent/        the assembled Mastra agent (supervisor + all registered specialists)
-│   ├── knowledge/    knowledge base and document management
-│   ├── staffing/     resource allocation and team management
-│   ├── notifications/ multi-channel notification system
-│   ├── integrations/ external system integrations (M365, etc.)
-│   ├── shared-*/     shared infrastructure packages (db, rbac, ui, crypto, storage, etc.)
+│   ├── core/         event bus + RBAC foundation (everything depends on it)
+│   ├── identity/     auth, multi-tenancy, user profiles
+│   ├── planner/      REFERENCE MODULE — canonical business module
+│   ├── agent/        the assembled Mastra agent (supervisor + specialists)
+│   ├── knowledge/    knowledge base & document management
+│   ├── staffing/     resource allocation & team management
+│   ├── notifications/ multi-channel notifications
+│   ├── integrations/ external systems (M365, etc.)
+│   ├── shared-*/     shared infra (db, rbac, ui, crypto, storage, …)
 │   └── your-module/  BUILD YOUR CUSTOM MODULE HERE
 │
 ├── sdks/
-│   ├── agent/        the SDK for authoring agent tools with HITL support
-│   └── module/       the SDK for plugging your module UI into the app shell
+│   ├── agent/        SDK for authoring agent tools (HITL support)
+│   └── module/       SDK for plugging module UI into the app shell
 │
-└── docs/
-    ├── architecture.md        system architecture and design principles
-    ├── agent-architecture.md  in-depth agent system design
-    ├── creating-modules.md    guide for building new modules
-    ├── dev-quickstart.md      local development setup
-    └── hosting/               deployment guides (AWS, Docker, etc.)
+└── docs/             guides indexed below
 ```
 
-**Related Documentation:**
-- **[`docs/architecture.md`](docs/architecture.md)**: Complete system architecture and design principles (SSOT)
-- **[`docs/agent-architecture.md`](docs/agent-architecture.md)**: Deep dive into the three-tier supervisor agent system
-- **[`docs/creating-modules.md`](docs/creating-modules.md)**: Module authoring guide with `pnpm gen module`
-- **[`docs/dev-quickstart.md`](docs/dev-quickstart.md)**: Local development setup and first-run instructions
-- **[`AGENTS.md`](AGENTS.md)**: Contract for AI coding agents working in this repo
+**Documentation:**
+- **[`docs/architecture.md`](docs/architecture.md)** — system architecture & design principles (single source of truth)
+- **[`docs/agent-architecture.md`](docs/agent-architecture.md)** — three-tier supervisor agent system
+- **[`docs/dev-quickstart.md`](docs/dev-quickstart.md)** — local setup & first run
+- **[`docs/creating-modules.md`](docs/creating-modules.md)** — building a module with `pnpm gen module`
+- **[`docs/hosting/`](docs/hosting/)** — self-hosting (Docker Compose, AWS, scaling, upgrades)
+- **[`AGENTS.md`](AGENTS.md)** — contract for AI coding agents working in this repo
 
 ---
 
-## 2. Agent Runtime Architecture
+## 2. Getting Started
+
+**Prerequisites:** Node 24 LTS, pnpm 11+, and Docker running.
+
+```bash
+git clone https://github.com/Seta-International/agent-platform.git && cd agent-platform
+pnpm install
+cp .env.example .env     # then fill BETTER_AUTH_SECRET, CRYPTO_LOCAL_MASTER_KEY, OPENAI_API_KEY
+pnpm db:up               # Postgres + Redis + telemetry, all in Docker
+pnpm db:migrate          # apply every module's schema
+pnpm db:seed             # load the demo tenant (~300 users, plans, tasks)
+pnpm dev                 # serves the app at http://localhost:5173
+```
+
+Sign in at <http://localhost:5173/login> as `admin@hackathon.com` / `ChangeMe@2026`.
+
+New here? The full walkthrough — secret generation, env reference, data-loading
+options, and troubleshooting — is in **[`docs/dev-quickstart.md`](docs/dev-quickstart.md)**.
+To build a business module, see **[`docs/creating-modules.md`](docs/creating-modules.md)**.
+
+---
+
+## 3. Agent Runtime Architecture
 
 ### Conceptual Runtime Flow
 
@@ -133,84 +151,17 @@ flowchart TD
     Exec --> EndStream
 ```
 
-### Detailed Implementation Flow (Case Study: Planner)
+### Detailed request flow
 
-This shows the step-by-step execution of a real system request. The diagram illustrates how the Server, Specialist Agent, Database, and Worker interact when resolving a multi-faceted business inquiry. For example: "Check if there's a task similar to 'Stripe webhook integration', and if not, assign someone with the right skills to take it."
-
-### 2a. Request Ingestion & Delegation Routing
-
-```mermaid
-sequenceDiagram
-    participant UI as Chat Companion (apps/web)
-    participant API as Server Router (Hono HTTP)
-    participant Mid as RBAC Middleware (shared-rbac)
-    participant Top as Supervisor Agent (Mastra Core)
-    participant Mem as Memory Manager (Mastra Memory)
-    participant Spec as Planner Specialist (packages/planner)
-
-    UI->>API: POST /api/agent/v1/chat with Message Payload & Thread ID
-    API->>Mid: Verify JWT and validate "agent.chat.use" permission
-    Mid-->>API: Inject Tenant isolation ID & User Profile
-    API->>Mem: Query short-term message windows + HNSW memory arrays from Postgres
-    Mem-->>API: Provide enriched Context Bundle
-    API->>Top: streamText(messages, context)
-    Note over Top: Classifies request -> Maps intent to the "Task Assignment" sub-domain
-    Top->>Spec: Delegate processing thread to the Planner Specialist
-    Note over Spec: Load and reference all 9 registered domain-specific business tools
-```
-
-### 2b. Structural Signaling & Context Gathering
-
-```mermaid
-sequenceDiagram
-    participant Spec as Planner Specialist Agent
-    participant SimTool as Duplicate Finder (Read Tool)
-    participant SkillTool as Resource Search (Read Tool)
-    participant DB as Postgres (pgvector)
-
-    Note over Spec: Gather details needed to check duplicates and match candidate skills
-    Spec->>SimTool: Call tool with task name parameters
-    SimTool->>DB: Cosine Similarity query on Task Vector indices (filtered by tenant)
-    DB-->>SimTool: Return potential duplicates matching score (e.g., Match found: 0.92)
-    SimTool-->>Spec: Payload confirming a highly similar task exists
-
-    Spec->>SkillTool: Call tool with parsed skills list: ["Stripe", "Webhooks"]
-    SkillTool->>DB: Query engineering skills catalog & check current work capacity
-    DB-->>SkillTool: Return matched profile metrics & existing task workloads
-    SkillTool-->>Spec: Return top candidate profiles
-```
-
-### 2c. HITL Interception & State Commitment
-
-```mermaid
-sequenceDiagram
-    participant Spec as Planner Specialist Agent
-    participant Propose as Assignment Proposer (Write Tool)
-    participant Stream as AI SDK v6 Engine
-    participant UI as Chat Component UI
-    participant Confirm as Approval Controller (/approve)
-    participant Core as Core Domain (packages/planner)
-    participant DB as Postgres
-    participant Outbox as core.events
-
-    Spec->>Propose: Call tool with proposed candidates & similarity context
-    Note over Propose: Trigger agent execution pause: ctx.agent.suspend()
-    Propose-->>Stream: Interrupt text token generation -> Package client UI metadata
-    Stream-->>UI: Render interactive Approval Card on client screen
-
-    Note over UI: User reviews candidate matches, selects assignee, and clicks "Confirm"
-    UI->>Confirm: POST authorization choice with payload
-    Confirm->>Core: Invoke assignTask() inside a Database Transaction
-    Core->>DB: Execute UPDATE statement on target Task record
-    Core->>Outbox: INSERT 'planner.task.assigned' event to the transactional outbox
-    Note over Core: Transaction commits atomically (system state and domain events are unified)
-    Confirm-->>Stream: Resume agent execution thread
-    Stream-->>UI: Stream remaining confirmation text to the chat window
-```
+For the full step-by-step sequence — request ingestion, RBAC, specialist delegation, read-tool context gathering, HITL approval, and the transactional outbox commit — see **[`docs/agent-architecture.md`](docs/agent-architecture.md)**.
 
 ---
 
-## 3. Infrastructure
+## 4. Hackathon & Cloud Deployment
+
+> This section is specific to deploying on the Seta hackathon AWS environment.
+> For local development use [§2 Getting Started](#2-getting-started); for general
+> self-hosting (Docker Compose, AWS, scaling, upgrades) see [`docs/hosting/`](docs/hosting/).
 
 > Each hackathon team is allocated a secure, isolated cloud sandbox environment in AWS.
 
@@ -229,7 +180,7 @@ graph TD
     end
 
     subgraph Private["VPC"]
-        RDS["AWS RDS Postgres 16"]
+        RDS["AWS RDS Postgres 17"]
         S3["AWS S3 Bucket"]
     end
 
@@ -238,7 +189,7 @@ graph TD
     Docker -->|Secure Asset Sync| S3
 ```
 
-## 4. Development Pipeline
+### Deployment Pipeline
 
 1. **Fork & Configure:** Fork the repository to your team workspace and configure production secrets (database URLs, LLM API keys, and session tokens).
 2. **Build & Push to ECR:** Build the root multi-stage Dockerfile (frontend static assets build and backend compilation bundle) and push the image to your dedicated AWS ECR repository.

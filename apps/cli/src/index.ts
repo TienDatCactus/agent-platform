@@ -241,15 +241,15 @@ program
 program
   .command('seed')
   .description(
-    'Load the SETA Future Org demo dataset (users, plans, buckets, tasks, timesheet). Auto-creates the tenant + admin if missing; idempotent on re-run.',
+    'Load the hackathon dataset (users, plans, buckets, tasks, timesheet). Auto-creates the tenant + admin if missing; idempotent on re-run.',
   )
-  .option('--tenant <slug-or-id>', 'Tenant slug or UUID', 'setafutureorg')
+  .option('--tenant <slug-or-id>', 'Tenant slug or UUID', 'hackathon')
   .option('--tenant-name <name>', 'Tenant display name when bootstrapping (defaults to slug)')
   .option('--dir <path>', 'Directory containing the CSV files', './hackathon/data')
   .option(
     '--admin-email <email>',
     'Admin email — used as acting session, and created if the tenant is new',
-    'canh.ta@setafutureorg.onmicrosoft.com',
+    'admin@hackathon.com',
   )
   .option('--admin-name <name>', 'Admin display name when bootstrapping a new tenant')
   .option('--password <password>', 'Password for created users', 'ChangeMe@2026')

@@ -106,7 +106,7 @@ export async function seedCommand(opts: SeedOpts): Promise<void> {
       throw new Error(`Tenant ${opts.tenant} not found and cannot be created from a UUID`);
     }
     const tenantName =
-      opts.tenantName ?? (opts.tenant === 'setafutureorg' ? 'SETA Future Org' : opts.tenant);
+      opts.tenantName ?? (opts.tenant === 'hackathon' ? 'Seta Hackathon' : opts.tenant);
     log.info(
       { slug: opts.tenant, name: tenantName, admin: opts.adminEmail },
       'tenant missing, creating',

@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       tenant:
-        description: 'Tenant slug (default: setafutureorg)'
+        description: 'Tenant slug (default: hackathon)'
         required: false
-        default: 'setafutureorg'
+        default: 'hackathon'
       tenant_name:
         description: 'Tenant display name (defaults to slug)'
         required: false
@@ -14,7 +14,7 @@ on:
       admin_email:
         description: 'Admin email'
         required: false
-        default: 'canh.ta@setafutureorg.onmicrosoft.com'
+        default: 'admin@hackathon.com'
       password:
         description: 'Default password for seeded users'
         required: false
