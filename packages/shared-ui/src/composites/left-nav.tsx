@@ -1,8 +1,20 @@
+'use client';
+
 import type { NavBadgeTone, NavItem, NavManifest, NavSection } from '@seta/module-sdk';
 import { ChevronLeft, ChevronRight, LayoutDashboard } from 'lucide-react';
 import * as React from 'react';
 
 import { cn } from '../lib/cn';
+import { Button } from '../primitives/button';
+import {
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarMenu,
+  SidebarMenuBadge,
+  SidebarMenuButton,
+  SidebarMenuItem,
+} from '../primitives/sidebar';
 
 const DOT_CLASS: Record<NavBadgeTone, string> = {
   primary: 'bg-primary',
@@ -77,61 +89,49 @@ export function LeftNav({
 
   if (collapsed) {
     return (
-      <nav
-        aria-label="Primary"
-        className={cn(
-          'flex h-full w-14 flex-none flex-col border-r border-hairline bg-surface-1',
-          className,
-        )}
-      >
-        <div className="flex h-[52px] items-center justify-center">
-          <button
+      <nav aria-label="Primary" className={cn('flex h-full min-h-0 flex-col', className)}>
+        <div className="flex h-10 items-center justify-center border-b border-sidebar-border px-2">
+          <Button
             type="button"
+            variant="ghost"
+            size="icon-sm"
             onClick={() => setCollapsed(false)}
             title="Expand sidebar"
             aria-label="Expand sidebar"
-            className="inline-flex size-8 items-center justify-center rounded-md text-ink-muted transition-colors hover:bg-surface-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-focus"
           >
             <LayoutDashboard className="size-4" aria-hidden />
-          </button>
+          </Button>
         </div>
-        <div className="mx-2 h-px bg-hairline" aria-hidden />
-        <div className="flex flex-col gap-1 py-3">
+
+        <SidebarMenu className="px-2 py-2">
           {modules.map((m) => {
             const Icon = m.icon;
             const isActive = openModuleId === m.id || activeModuleId === m.id;
             return (
-              <button
-                key={m.id}
-                type="button"
-                title={m.label}
-                aria-label={m.label}
-                aria-current={isActive ? 'page' : undefined}
-                onClick={() => {
-                  setOpenModuleId(m.id);
-                  setCollapsed(false);
-                }}
-                className={cn(
-                  'relative mx-auto inline-flex size-10 items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-focus',
-                  isActive
-                    ? 'bg-primary-tint text-primary'
-                    : 'text-ink-muted hover:bg-surface-2 hover:text-ink',
-                )}
-              >
-                <Icon className="size-4" aria-hidden />
-                {isActive && (
-                  <span
-                    className="absolute -left-2 top-2 bottom-2 w-0.5 rounded bg-primary"
-                    aria-hidden
-                  />
-                )}
-              </button>
+              <SidebarMenuItem key={m.id}>
+                <SidebarMenuButton
+                  type="button"
+                  isActive={isActive}
+                  tooltip={m.label}
+                  onClick={() => {
+                    setOpenModuleId(m.id);
+                    setCollapsed(false);
+                  }}
+                  className="justify-center"
+                  aria-label={m.label}
+                  aria-current={isActive ? 'page' : undefined}
+                >
+                  <Icon className="size-4" aria-hidden />
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             );
           })}
-        </div>
+        </SidebarMenu>
+
         <div className="flex-1" />
+
         {sessionFooter && (
-          <div className="flex h-14 items-center justify-center border-t border-hairline">
+          <div className="flex h-14 items-center justify-center border-t border-sidebar-border px-2">
             {sessionFooter}
           </div>
         )}
@@ -140,29 +140,24 @@ export function LeftNav({
   }
 
   return (
-    <nav
-      aria-label="Primary"
-      className={cn(
-        'flex h-full w-60 flex-none flex-col overflow-hidden border-r border-hairline bg-surface-1',
-        className,
-      )}
-    >
-      <div className="flex h-10 flex-none items-center justify-between border-b border-hairline pl-3.5 pr-2">
-        <span className="text-eyebrow uppercase text-ink-subtle">Workspace</span>
+    <nav aria-label="Primary" className={cn('flex h-full min-h-0 flex-col overflow-hidden', className)}>
+      <div className="flex h-10 flex-none items-center justify-between border-b border-sidebar-border px-3">
+        <span className="text-eyebrow uppercase text-sidebar-foreground/70">Workspace</span>
         {!hideCollapse && (
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon-sm"
             onClick={() => setCollapsed(true)}
             title="Collapse sidebar"
             aria-label="Collapse sidebar"
-            className="inline-flex size-6 items-center justify-center rounded-md text-ink-muted transition-colors hover:bg-surface-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-focus"
           >
             <ChevronLeft className="size-3.5" aria-hidden />
-          </button>
+          </Button>
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto py-1.5">
+      <div className="flex-1 overflow-y-auto py-2">
         {modules.map((m) => (
           <ModuleSection
             key={m.id}
@@ -176,9 +171,7 @@ export function LeftNav({
         ))}
       </div>
 
-      {sessionFooter && (
-        <div className="flex-none border-t border-hairline p-2.5">{sessionFooter}</div>
-      )}
+      {sessionFooter && <div className="flex-none border-t border-sidebar-border p-2.5">{sessionFooter}</div>}
     </nav>
   );
 }
@@ -206,67 +199,66 @@ function ModuleSection({
   const isAgent = manifest.id === 'agent';
 
   return (
-    <div className="mb-0.5">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={isOpen}
-        aria-controls={`shell-nav-module-${manifest.id}`}
-        className="mx-1.5 flex h-[30px] w-[calc(100%-12px)] items-center gap-2 rounded-sm px-2 text-left text-body-sm font-semibold text-ink transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-focus"
-      >
-        <ChevronRight
-          className={cn(
-            'size-3 text-ink-subtle transition-transform duration-100',
-            isOpen && 'rotate-90',
-          )}
-          aria-hidden
-        />
-        <ModuleIcon
-          className={cn(
-            'size-3.5',
-            isAgent ? 'text-violet-500' : moduleActive ? 'text-primary' : 'text-ink-muted',
-          )}
-          aria-hidden
-        />
-        <span
-          className={cn(
-            'flex-1',
-            isAgent
-              ? 'bg-gradient-to-r from-violet-500 to-blue-600 bg-clip-text text-transparent'
-              : moduleActive
-                ? 'text-ink'
-                : 'text-ink-muted',
-          )}
-        >
-          {manifest.label}
-        </span>
-        {!isOpen && moduleActive && (
-          <span className="inline-block size-1.5 rounded-full bg-primary" aria-hidden />
-        )}
-      </button>
+    <SidebarGroup className="px-2 py-1">
+      <SidebarMenu>
+        <SidebarMenuItem>
+          <SidebarMenuButton
+            type="button"
+            onClick={onToggle}
+            isActive={moduleActive}
+            aria-expanded={isOpen}
+            aria-controls={`shell-nav-module-${manifest.id}`}
+          >
+            <ChevronRight
+              className={cn(
+                'size-3 text-sidebar-foreground/70 transition-transform duration-100',
+                isOpen && 'rotate-90',
+              )}
+              aria-hidden
+            />
+            <ModuleIcon
+              className={cn(
+                'size-3.5',
+                isAgent ? 'text-violet-500' : moduleActive ? 'text-primary' : 'text-sidebar-foreground/70',
+              )}
+              aria-hidden
+            />
+            <span
+              className={cn(
+                'flex-1',
+                isAgent
+                  ? 'bg-linear-to-r from-violet-500 to-blue-600 bg-clip-text text-transparent'
+                  : moduleActive
+                    ? 'text-sidebar-foreground'
+                    : 'text-sidebar-foreground/80',
+              )}
+            >
+              {manifest.label}
+            </span>
+            {!isOpen && moduleActive && <span className="inline-block size-1.5 rounded-full bg-primary" aria-hidden />}
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      </SidebarMenu>
 
       {isOpen && (
-        <div id={`shell-nav-module-${manifest.id}`} className="pb-1.5 pt-0.5">
-          {sections.map((section, sectionIdx) =>
+        <SidebarGroupContent id={`shell-nav-module-${manifest.id}`} className="pt-1">
+          {sections.map((section) =>
             section.items.length === 0 ? null : (
-              <div key={`${manifest.id}:${section.label}`} className={sectionIdx > 0 ? 'mt-2' : ''}>
-                <div className="mt-1 mb-0.5 px-[28px] text-eyebrow uppercase tracking-[0.04em] text-ink-subtle">
+              <div key={`${manifest.id}:${section.label}`} className="mt-2 first:mt-0">
+                <SidebarGroupLabel className="h-6 px-2 text-eyebrow uppercase tracking-[0.04em] text-sidebar-foreground/70">
                   {section.label}
-                </div>
-                {section.items.map((item) => (
-                  <NavItemRow
-                    key={item.id}
-                    item={item}
-                    active={activeItemId === item.id}
-                    Link={Link}
-                  />
-                ))}
+                </SidebarGroupLabel>
+                <SidebarMenu>
+                  {section.items.map((item) => (
+                    <NavItemRow key={item.id} item={item} active={activeItemId === item.id} Link={Link} />
+                  ))}
+                </SidebarMenu>
               </div>
             ),
           )}
-        </div>
+        </SidebarGroupContent>
       )}
-    </div>
+    </SidebarGroup>
   );
 }
 
@@ -279,57 +271,36 @@ interface NavItemRowProps {
 function NavItemRow({ item, active, Link }: NavItemRowProps) {
   const Icon = item.icon ?? null;
   const indent = item.indent ?? 0;
-
-  const inner = (
-    <>
-      {active && (
-        <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded bg-primary" aria-hidden />
-      )}
-      {Icon && (
-        <Icon className={cn('size-3.5', active ? 'text-ink' : 'text-ink-muted')} aria-hidden />
-      )}
-      <span className="flex-1 truncate">{item.label}</span>
-      {item.badgeTone && (
-        <span
-          className={cn('inline-block size-1.5 rounded-full', DOT_CLASS[item.badgeTone])}
-          aria-hidden
-        />
-      )}
-      {item.badge != null && <span className="text-eyebrow text-ink-subtle">{item.badge}</span>}
-    </>
-  );
-
-  const baseClass = cn(
-    'group relative mx-1.5 mb-px flex h-7 items-center gap-2 rounded-sm text-body-sm',
-    active
-      ? 'bg-surface-3 font-medium text-ink'
-      : 'text-ink-muted hover:bg-surface-2 hover:text-ink',
-    item.disabled && 'cursor-not-allowed opacity-55 hover:bg-transparent hover:text-ink-muted',
-  );
-
-  const style: React.CSSProperties = { paddingLeft: 28 + indent * 14, paddingRight: 10 };
+  const indentClass = indent > 0 ? `pl-[${8 + indent * 14}px]` : '';
 
   if (item.disabled || !item.to) {
     return (
-      <span
-        className={baseClass}
-        style={style}
-        title={item.disabled ? (item.disabledHint ?? 'Coming soon') : undefined}
-        aria-disabled={item.disabled || undefined}
-      >
-        {inner}
-      </span>
+      <SidebarMenuItem>
+        <SidebarMenuButton
+          type="button"
+          disabled
+          title={item.disabled ? (item.disabledHint ?? 'Coming soon') : undefined}
+          className={cn(indentClass)}
+        >
+          {Icon && <Icon className="size-3.5" aria-hidden />}
+          <span>{item.label}</span>
+          {item.badgeTone && <span className={cn('inline-block size-1.5 rounded-full', DOT_CLASS[item.badgeTone])} aria-hidden />}
+          {item.badge != null && <SidebarMenuBadge>{item.badge}</SidebarMenuBadge>}
+        </SidebarMenuButton>
+      </SidebarMenuItem>
     );
   }
 
   return (
-    <Link
-      href={item.to}
-      className={baseClass}
-      style={style}
-      aria-current={active ? 'page' : undefined}
-    >
-      {inner}
-    </Link>
+    <SidebarMenuItem>
+      <SidebarMenuButton asChild isActive={active} className={cn(indentClass)}>
+        <Link href={item.to} aria-current={active ? 'page' : undefined}>
+          {Icon && <Icon className="size-3.5" aria-hidden />}
+          <span>{item.label}</span>
+          {item.badgeTone && <span className={cn('inline-block size-1.5 rounded-full', DOT_CLASS[item.badgeTone])} aria-hidden />}
+          {item.badge != null && <SidebarMenuBadge>{item.badge}</SidebarMenuBadge>}
+        </Link>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
   );
 }

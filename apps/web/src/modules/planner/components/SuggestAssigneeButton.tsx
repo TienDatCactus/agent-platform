@@ -1,4 +1,4 @@
-import { Button,  } from '@seta/shared-ui';
+import { Button, toast,  } from '@seta/shared-ui';
 import { Link } from '@tanstack/react-router';
 import { Loader2, MoveUpRight, Sparkles } from 'lucide-react';
 import { useStartAssignBySkill } from '../api/start-assign-by-skill';

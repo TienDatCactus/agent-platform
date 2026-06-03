@@ -13,6 +13,7 @@ import { useNotificationStream } from '@/modules/notifications/hooks/useNotifica
 import { activeNavId, visibleManifests } from '@/shell/manifest-registry.ts';
 import { ALL_MANIFESTS } from '@/shell/manifests.ts';
 import { fetchEnabledModules } from '../../shell/enabled-modules.ts';
+import { TooltipProvider } from '@seta/shared-ui';
 
 function ShellLink({ href, ...rest }: ShellLinkProps) {
   // TanStack Router's typed `to` is strictly enumerated; cast preserves intellisense at call sites
@@ -64,20 +65,22 @@ function ShellWithPanel({ children }: { children: React.ReactNode }) {
   useNotificationStream(true);
 
   return (
-    <AppShell
-      workspace={session.tenant_name}
-      modules={navModules}
-      activeItemId={activeId}
-      linkComponent={ShellLink}
-      userMenu={<UserMenu />}
-      hideAgent={pathname.startsWith('/agent/')}
-      notificationPanel={<NotificationPopoverContainer />}
-      agentPanel={<AgentSidePanel onClose={() => setPanelOpen(false)} />}
-      agentOpen={panelOpen}
-      onAgentOpenChange={setPanelOpen}
-      agentMobileSlot={<AgentMobileSheet />}
-    >
-      {children}
-    </AppShell>
+    <TooltipProvider>
+      <AppShell
+        workspace={session.tenant_name}
+        modules={navModules}
+        activeItemId={activeId}
+        linkComponent={ShellLink}
+        userMenu={<UserMenu />}
+        hideAgent={pathname.startsWith('/agent/')}
+        notificationPanel={<NotificationPopoverContainer />}
+        agentPanel={<AgentSidePanel onClose={() => setPanelOpen(false)} />}
+        agentOpen={panelOpen}
+        onAgentOpenChange={setPanelOpen}
+        agentMobileSlot={<AgentMobileSheet />}
+      >
+        {children}
+      </AppShell>
+    </TooltipProvider>
   );
 }

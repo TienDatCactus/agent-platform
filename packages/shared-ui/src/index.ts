@@ -3,6 +3,7 @@ export * from './board/preview-card';
 export * from './composites/agent-panel';
 // Composites
 export * from './composites/app-shell';
+export * from './composites/app-sidebar';
 export * from './composites/avatar-stack';
 export * from './composites/chat-composer';
 export * from './composites/chat-hitl-card';
@@ -114,7 +115,7 @@ export * from './primitives/textarea';
 export * from './primitives/toggle';
 export * from './primitives/toggle-group';
 export * from './primitives/tooltip';
-export * from 'sonner'
+export {toast} from 'sonner'
 // Sync
 export * from './sync/m365-error-messages';
 // Task
