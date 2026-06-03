@@ -13,7 +13,7 @@ const Env = z.object({
   MAILER_DEFAULT_TRANSPORT: z.enum(['smtp', 'dev-stub']).default('dev-stub'),
   MAILER_DEFAULT_SENDER: z.string().email().default('noreply@seta.example'),
   MAILER_DEFAULT_SENDER_DISPLAY_NAME: z.string().optional(),
-  MAILER_DEFAULT_SMTP_URL: z.string().url().optional(),
+  MAILER_DEFAULT_SMTP_URL: z.string().optional(),
   MAILER_GRAPH_CLIENT_ID: z.string().optional(),
   MAILER_GRAPH_CLIENT_SECRET: z.string().optional(),
   M365_WEBHOOK_SECRET: z.string().min(32).optional(),
