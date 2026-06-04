@@ -5610,6 +5610,8 @@ packages:
 
   '@turbo/darwin-arm64@2.9.16':
     resolution: {integrity: sha512-YPgrn+5HIGzrx0O2a631SV4MBQUe4W/DafMFUuBVgaU32PW9/OTT0ehviF0QSxTXuRJlHvW2eUTemddF5/spmw==}
+  '@turbo/darwin-arm64@2.9.16':
+    resolution: {integrity: sha512-YPgrn+5HIGzrx0O2a631SV4MBQUe4W/DafMFUuBVgaU32PW9/OTT0ehviF0QSxTXuRJlHvW2eUTemddF5/spmw==}
     cpu: [arm64]
     os: [darwin]
 
@@ -19713,6 +19715,7 @@ snapshots:
     dependencies:
       safe-buffer: 5.2.1
 
+  turbo@2.9.16:
   turbo@2.9.16:
     optionalDependencies:
       '@turbo/darwin-64': 2.9.16

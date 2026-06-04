@@ -22,12 +22,14 @@ import type {
   PlannerLabelDeleted,
   PlannerLabelUnapplied,
   PlannerLabelUpdated,
+  PlannerPlanArchived,
   PlannerPlanCategoryDescriptionChanged,
   PlannerPlanConflictResolved,
   PlannerPlanCreated,
   PlannerPlanDeleted,
   PlannerPlanRestored,
   PlannerPlanSyncStatusChanged,
+  PlannerPlanUnarchived,
   PlannerPlanUpdated,
   PlannerTaskAssigned,
   PlannerTaskCompleted,
@@ -380,6 +382,54 @@ export async function emitPlannerPlanRestored(args: {
   });
 }
 
+export async function emitPlannerPlanArchived(args: {
+  actor: PlannerEventActor;
+  tenant_id: Uuid;
+  group_id: Uuid;
+  plan_id: Uuid;
+  version_before: PlannerPlanArchived['payload']['version_before'];
+  archived_at: PlannerPlanArchived['payload']['archived_at'];
+}): Promise<{ eventId: string }> {
+  return emit({
+    tenantId: args.tenant_id,
+    aggregateType: 'planner.plan',
+    aggregateId: args.plan_id,
+    eventType: 'planner.plan.archived',
+    eventVersion: 1,
+    payload: {
+      actor: args.actor,
+      tenant_id: args.tenant_id,
+      group_id: args.group_id,
+      plan_id: args.plan_id,
+      version_before: args.version_before,
+      archived_at: args.archived_at,
+    },
+  });
+}
+
+export async function emitPlannerPlanUnarchived(args: {
+  actor: PlannerEventActor;
+  tenant_id: Uuid;
+  group_id: Uuid;
+  plan_id: Uuid;
+  version_after: PlannerPlanUnarchived['payload']['version_after'];
+}): Promise<void> {
+  await emit({
+    tenantId: args.tenant_id,
+    aggregateType: 'planner.plan',
+    aggregateId: args.plan_id,
+    eventType: 'planner.plan.unarchived',
+    eventVersion: 1,
+    payload: {
+      actor: args.actor,
+      tenant_id: args.tenant_id,
+      group_id: args.group_id,
+      plan_id: args.plan_id,
+      version_after: args.version_after,
+    },
+  });
+}
+
 // -----
 // Buckets
 // -----
@@ -440,7 +490,7 @@ export async function emitPlannerBucketDeleted(args: {
   bucket_id: Uuid;
   plan_id: Uuid;
   version_before: number;
-  reflowed_task_ids: PlannerBucketDeleted['payload']['reflowed_task_ids'];
+  deleted_task_ids: PlannerBucketDeleted['payload']['deleted_task_ids'];
 }): Promise<void> {
   await emit({
     tenantId: args.tenant_id,
@@ -454,7 +504,7 @@ export async function emitPlannerBucketDeleted(args: {
       bucket_id: args.bucket_id,
       plan_id: args.plan_id,
       version_before: args.version_before,
-      reflowed_task_ids: args.reflowed_task_ids,
+      deleted_task_ids: args.deleted_task_ids,
     },
   });
 }
