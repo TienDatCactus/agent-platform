@@ -5,7 +5,7 @@ import { PlanBoardShell } from '@/modules/planner/pages/plan-board-shell';
 import { serializeFiltersToSearch } from '@/modules/planner/state/url-state';
 
 const searchSchema = z.object({
-  view: z.enum(['board', 'grid']).optional(),
+  view: z.enum(['board', 'grid', 'calendar']).optional(),
   groupBy: z.enum(['bucket', 'assignee', 'priority', 'due', 'label']).optional(),
   'filter.assignee': z.string().optional(),
   'filter.label': z.string().optional(),
@@ -13,6 +13,15 @@ const searchSchema = z.object({
   q: z.string().optional(),
   /** Jira-style modal-over-board: when set, opens the task detail in a centered modal. */
   selectedTask: z.string().uuid().optional(),
+  calFrom: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  calTo: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  calPage: z.coerce.number().int().min(1).optional(),
 });
 
 export const Route = createFileRoute('/_authed/planner/plans_/$planId')({
@@ -46,6 +55,17 @@ function PlanRoute() {
         onOpenTask={(taskId) => navigate({ search: (prev) => ({ ...prev, selectedTask: taskId }) })}
         onLeaveAfterDelete={(groupId) =>
           void navigate({ to: '/planner/groups/$groupId', params: { groupId } })
+        }
+        onCalendarRangeChange={(from, to, opts) =>
+          navigate({
+            replace: opts?.replace ?? false,
+            search: (prev) => ({ ...prev, calFrom: from, calTo: to, calPage: undefined }),
+          })
+        }
+        onCalendarPageChange={(page) =>
+          navigate({
+            search: (prev) => ({ ...prev, calPage: page <= 1 ? undefined : page }),
+          })
         }
       />
       {selectedTaskId && (
